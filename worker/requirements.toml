@@ -1,0 +1,18 @@
+allowed_approval_policies = ["never"]
+allowed_sandbox_modes = ["read-only", "workspace-write"]
+allow_login_shell = false
+allow_managed_hooks_only = true
+allowed_login_methods = ["chatgpt"]
+
+# Integrations belong to the future controller, outside the coding process.
+[mcp_servers]
+
+[permissions.filesystem]
+# Codex creates its sandbox executable aliases under CODEX_HOME/tmp. Blocking
+# all of CODEX_HOME prevents startup; protect the credential file explicitly.
+deny_read = ["/state/auth/auth.json", "/state/results", "/transport", "/run/secrets"]
+
+[features]
+shell_snapshot = false
+apps = false
+plugins = false
