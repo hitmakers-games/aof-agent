@@ -27,6 +27,12 @@ class ChatTests(unittest.TestCase):
             self.db.execute("INSERT INTO inbox(update_id,text,status) VALUES (?,?,?)",
                             (request_id, text, status))
 
+    def test_prompt_carries_autonomy_and_follow_up_guidance(self):
+        prompt = chat.prompt_for(self.db, "Continue")
+        for guidance in ("do not ask permission again", "continue independent work",
+                         "status question", "says to stop"):
+            self.assertIn(guidance, prompt)
+
     def test_reply_and_report_commit_together_and_are_not_run_again(self):
         self.enqueue(1)
         reply = Mock(return_value="Hi")
