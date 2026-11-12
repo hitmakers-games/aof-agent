@@ -1,13 +1,38 @@
 """Normal repository work with GitHub App credentials outside model commands."""
-import hashlib
 import json
 from pathlib import Path
+import re
 from urllib.request import build_opener, ProxyHandler
 
 from coding.config import BASES
 from coding import git
 from coding.publish import SECRET
 from repositories.github_app import GitHubApp,NoRedirects
+
+
+def validate_checkout(path,remote):
+    """Allow ordinary Git preferences without trusting executable/auth settings."""
+    directory=path/'.git'
+    if directory.is_symlink() or not directory.is_dir() or (directory/'config').is_symlink():
+        raise ValueError('Invalid checkout metadata; existing files were preserved.')
+    settings=git.run(['config','--local','--no-includes','--null','--list'],path)
+    safe={'core.repositoryformatversion','core.filemode','core.bare','core.logallrefupdates',
+          'core.ignorecase','core.precomposeunicode','core.symlinks','core.autocrlf',
+          'core.eol','core.safecrlf','core.quotepath','commit.gpgsign','tag.gpgsign',
+          'init.defaultbranch','pull.rebase','pull.ff','push.default','fetch.prune',
+          'rebase.autostash','merge.ff','merge.conflictstyle','remote.origin.fetch'}
+    origins=[]
+    for entry in settings.split('\0'):
+        if not entry:continue
+        key,_,value=entry.partition('\n')
+        key=key.lower()
+        if key=='remote.origin.url':
+            origins.append(value)
+        elif key not in safe and not key.startswith(('user.','color.','advice.')) and not re.fullmatch(
+                r'branch\..+\.(remote|merge|rebase|description|pushremote|vscode-merge-base)',key):
+            raise ValueError('Git '+key.split('.')[0]+' settings need review before authenticated operations.')
+    if origins!=[remote]:
+        raise ValueError('The checkout remote must match its corporate repository.')
 
 
 class Repositories:
@@ -35,13 +60,15 @@ class Repositories:
             if branch!=BASES[repository]:git.run(['checkout','-b',branch],path)
             git.run(['config','user.name','aof-agent[bot]'],path)
             git.run(['config','user.email','aof-agent[bot]@users.noreply.github.com'],path)
-            record[repository]={'config':hashlib.sha256((path/'.git/config').read_bytes()).hexdigest(),'branch':branch}
+            record[repository]={'branch':branch}
             self.records.write_text(json.dumps(record))
         if path.is_symlink() or not path.is_dir() or repository not in record:
             raise ValueError('Checkout this repository first.')
         saved=record[repository]
-        if (path/'.git/config').is_symlink() or hashlib.sha256((path/'.git/config').read_bytes()).hexdigest()!=saved['config']:
-            raise ValueError('Git configuration changed outside the trusted tool.')
+        validate_checkout(path,remote)
+        saved['branch']=git.run(['branch','--show-current'],path)
+        if not saved['branch']:
+            raise ValueError('Checkout a named working branch before committing or publishing.')
         if action=='checkout' and requested_branch and requested_branch!=saved['branch']:
             if git.run(['status','--porcelain'],path):
                 raise ValueError('Commit or finish the current changes before switching task branches; files were preserved.')
