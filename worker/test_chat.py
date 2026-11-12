@@ -1,4 +1,5 @@
 import sqlite3
+import json
 import tempfile
 import time
 import unittest
@@ -74,6 +75,25 @@ class ChatTests(unittest.TestCase):
         update["update_id"]=2
         bot.handle_update(self.db, update, "", 0)
         self.assertEqual(self.db.execute("SELECT status FROM inbox WHERE update_id=2").fetchone()[0], "queued")
+
+    def test_admin_private_context_continues_across_chats_without_public_leaks(self):
+        from gateway import access
+        with self.db:
+            access.grant(self.db, 123, 456, 'operator')
+            for uid, source, actor, text in [(1,123,123,'private owner work'),
+                                              (2,-20,123,'group work'),
+                                              (3,456,456,'other private work')]:
+                self.db.execute("""INSERT INTO inbox(update_id,text,status,response,chat_id,requested_by)
+                                  VALUES (?,?,'completed','done',?,?)""", (uid,text,source,actor))
+        def history(actor, source):
+            payload = chat.prompt_for(self.db, 'continue', actor=actor, chat_id=source).split('\n')[-1]
+            return json.loads(payload)['history']
+        private = history(123,123)
+        self.assertEqual({row['user'] for row in private},
+                         {'private owner work','group work'})
+        self.assertEqual({row['chat_id'] for row in private}, {123,-20})
+        self.assertEqual([row['user'] for row in history(123,-20)], ['group work'])
+        self.assertEqual([row['user'] for row in history(456,456)], ['other private work'])
 
     def test_chat_command_enables_developer_tools_with_trusted_identity(self):
         with patch('developer.session.workspace',return_value=Path(self.temp.name)),patch.object(chat, "run_codex", return_value={"response":"Hello"}) as run:

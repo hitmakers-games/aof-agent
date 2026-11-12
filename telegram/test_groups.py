@@ -68,14 +68,14 @@ class GroupTests(unittest.TestCase):
         self.message('hello',chat=123)
         self.assertEqual(self.db.execute('SELECT chat_id FROM inbox').fetchone()[0],123)
 
-    def test_group_and_private_model_context_are_separate(self):
+    def test_private_admin_context_includes_group_work_but_group_excludes_private_work(self):
         self.message('Private secret',chat=123)
         with self.db:self.db.execute("UPDATE inbox SET status='completed',response='Private answer'")
         self.message('@AofAgentBot Public topic')
         group_id=self.number
         self.assertNotIn('Private secret',prompt_for(self.db,'new question',123,-900))
         with self.db:self.db.execute("UPDATE inbox SET status='completed',response='Public answer' WHERE update_id=?",(group_id,))
-        self.assertNotIn('Public topic',prompt_for(self.db,'private question',123,123))
+        self.assertIn('Public topic',prompt_for(self.db,'private question',123,123))
 
     def test_group_reply_delivers_to_group_and_rechecks_permission(self):
         self.message('@AofAgentBot hello')

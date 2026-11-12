@@ -18,13 +18,40 @@ class ModelsTest(unittest.TestCase):
     def tearDown(self):
         self.db.close();self.temp.cleanup()
 
-    def test_chat_choice_survives_reconnect_and_does_not_change_other_chats(self):
+    def test_shared_choice_survives_reconnect_and_applies_to_other_chats(self):
         with self.db:dispatch(self.db,1,'/mode fast',10,chat_id=-20)
         other=connect(self.path)
         try:
             self.assertEqual(models.selected(other,-20),models.PRESETS['fast'])
-            self.assertEqual(models.selected(other,10),models.PRESETS['balanced'])
+            self.assertEqual(models.selected(other,10),models.PRESETS['fast'])
         finally:other.close()
+
+    def test_upgrade_carries_owner_preference_and_ignores_old_group_override(self):
+        preference = {'model': 'gpt-6.1-sol', 'effort': 'medium'}
+        with self.db:
+            put(self.db, 'model:10', json.dumps(preference))
+            put(self.db, 'model:-20', json.dumps(models.PRESETS['smart']))
+            models.initialize(self.db)
+        self.assertEqual(models.selected(self.db, -20), preference)
+        with self.db:
+            dispatch(self.db, 1, '/mode fast', 10, chat_id=-20)
+            models.initialize(self.db)
+        self.assertEqual(models.selected(self.db, 10), models.PRESETS['fast'])
+
+    def test_other_operator_changes_the_same_shared_preference(self):
+        from gateway import access
+        with self.db:
+            access.grant(self.db, 10, 11, 'operator')
+            dispatch(self.db, 1, '/reasoning high', 11, chat_id=-20)
+        self.assertEqual(models.selected(self.db, 10)['effort'], 'high')
+
+    def test_viewer_cannot_change_shared_settings(self):
+        from gateway import access
+        with self.db:
+            access.grant(self.db, 10, 11, 'viewer')
+        with self.assertRaises(ValueError):
+            models.command(self.db, 11, -20, '/mode', 'fast')
+        self.assertEqual(models.selected(self.db, 10), models.PRESETS['balanced'])
 
     def test_one_message_override_does_not_change_saved_mode(self):
         with self.db:

@@ -1,4 +1,4 @@
-"""Telegram model selection; choices are saved separately from untrusted prompts."""
+"""Shared developer model selection, with immutable per-request choices."""
 import json
 import os
 from pathlib import Path
@@ -9,7 +9,7 @@ from telegram.storage import put, setting
 
 PRESETS = {
     'fast': {'model': 'gpt-6-luna', 'effort': 'low'},
-    'balanced': {'model': 'gpt-6.1-sol', 'effort': 'low'},
+    'balanced': {'model': 'gpt-6.1-sol', 'effort': 'medium'},
     'smart': {'model': 'gpt-6-astra', 'effort': 'high'},
 }
 
@@ -46,7 +46,15 @@ def catalog():
 
 
 def selected(db, chat_id):
-    return json.loads(setting(db, f'model:{chat_id}', json.dumps(PRESETS['balanced'])))
+    # Carry forward the owner's preference when upgrading from per-chat settings.
+    # A group's old override must never become the shared developer preference.
+    legacy = setting(db, f"model:{setting(db, 'owner')}", json.dumps(PRESETS['balanced']))
+    return json.loads(setting(db, 'developer:model', legacy))
+
+
+def initialize(db):
+    db.execute("INSERT INTO settings(key,value) VALUES (?,?) ON CONFLICT(key) DO NOTHING",
+               ('developer:model', json.dumps(selected(db, None))))
 
 
 def validate(value):
@@ -77,9 +85,9 @@ def command(db, actor, chat_id, head, argument):
         else:
             current['effort'] = argument
         current = validate(current)
-        put(db, f'model:{chat_id}', json.dumps(current))
-        access.audit(db, actor, 'model.select', chat_id, current)
-    return f"Model: {current['model']}\nReasoning: {current['effort']}\n/mode fast|balanced|smart; /model name [reasoning]; /reasoning level\n/fast message or /smart message changes only that request."
+        put(db, 'developer:model', json.dumps(current))
+        access.audit(db, actor, 'model.select', 'developer', current)
+    return f"Model: {current['model']}\nReasoning: {current['effort']}\nShared across Telegram chats.\n/mode fast|balanced|smart; /model name [reasoning]; /reasoning level\n/fast message or /smart message changes only that request."
 
 
 def snapshot(db, request_id, chat_id, override=None):

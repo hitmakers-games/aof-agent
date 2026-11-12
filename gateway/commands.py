@@ -19,7 +19,7 @@ def minimum(text):
 def help_text(db, actor):
     text = 'Developer gateway\n/whoami — your numeric ID and role\n/status [task] — availability/status\n/work or /tasks — assignments'
     if access.allowed(db, actor, 'operator'):
-        text += '\n/models; /model name [reasoning]; /reasoning level\n/mode fast|balanced|smart — this chat\n/fast message; /smart message — one request'
+        text += '\n/models; /model name [reasoning]; /reasoning level\n/mode fast|balanced|smart — shared developer setting\n/fast message; /smart message — one request'
         text += '''\nPlain text or /ask — private conversation
 /task description — shared assignment, awaiting approval by default
 /task-run description — explicitly register and queue an assignment
