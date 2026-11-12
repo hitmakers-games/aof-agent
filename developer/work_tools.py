@@ -7,7 +7,7 @@ from telegram.storage import put
 
 
 def execute(db, actor, chat, action, reference=None, title=None, description='', repositories=None,
-            notify=False, topic='mine', minutes=0, events='changes'):
+            notify=False, topic='mine', minutes=0, events='changes', model_options=None):
     access.require(db,actor,'viewer')
     if action=='list':
         return {'queue':work.listing(db,actor)}
@@ -32,7 +32,7 @@ def execute(db, actor, chat, action, reference=None, title=None, description='',
         else:
             item=work.create(db,actor,title or description[:100],description,shared=True,repositories=repositories)
         work.approve(db,actor,item['id'])
-        models.snapshot(db,item['id'],chat)
+        models.snapshot(db,item['id'],chat,model_options)
         put(db,'work-chat:'+item['id'],chat)
         if notify:subscriptions.watch(db,actor,chat,item['id'],events='finished')
         return {'task':item['issue_key'],'state':work.get(db,item['id'])['state']}

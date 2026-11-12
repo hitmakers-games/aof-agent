@@ -66,8 +66,10 @@ class Developer:
             with self.db:
                 if args['action']=='start':
                     from developer.effects import once
+                    from gateway.models import for_request
+                    selected=for_request(self.db,os.environ.get('AOF_MCP_REQUEST','0'),self.chat)
                     return once(self.db,os.environ.get('AOF_MCP_REQUEST','0'),'work.start',args,
-                        lambda:execute(self.db,self.actor,self.chat,**args))
+                        lambda:execute(self.db,self.actor,self.chat,model_options=selected,**args))
                 return execute(self.db,self.actor,self.chat,**args)
         if name=='memory':
             access.require(self.db,self.actor,'operator')
