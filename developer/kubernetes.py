@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import subprocess
 import re
+import tempfile
 
 from gateway.redaction import redact,log_summary
 
@@ -25,10 +26,13 @@ class Kubernetes:
     def __init__(self,config_path=None):
         self.kubeconfig=Path(config_path or '/transport/developer-control/kubeconfig.json')
         self.kubeconfig.parent.mkdir(parents=True,exist_ok=True,mode=0o700)
-        self.kubeconfig.write_text(json.dumps({'apiVersion':'v1','kind':'Config',
+        contents=json.dumps({'apiVersion':'v1','kind':'Config',
             'clusters':[{'name':'agent','cluster':{'server':'https://kubernetes.default.svc','certificate-authority':'/run/secrets/kubernetes/ca.crt'}}],
             'users':[{'name':'developer','user':{'tokenFile':'/run/secrets/kubernetes/token'}}],
-            'contexts':[{'name':'agent','context':{'cluster':'agent','user':'developer','namespace':'aof-agent'}}],'current-context':'agent'}))
+            'contexts':[{'name':'agent','context':{'cluster':'agent','user':'developer','namespace':'aof-agent'}}],'current-context':'agent'})
+        with tempfile.NamedTemporaryFile(mode='w',dir=self.kubeconfig.parent,delete=False) as temporary:
+            temporary.write(contents)
+        os.replace(temporary.name,self.kubeconfig)
 
     def execute(self,action,namespace='aof-agent',resource='deployments',name=None,manifest=None,patch=None,replicas=None,container=None,tail=100,command=None):
         mutating=action in {'apply','delete','patch','scale','restart','exec'}

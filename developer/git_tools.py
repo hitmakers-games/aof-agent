@@ -71,7 +71,7 @@ class Repositories:
         if not saved['branch']:
             raise ValueError('Checkout a named working branch before committing or publishing.')
         if action=='checkout' and requested_branch and requested_branch!=saved['branch']:
-            if git.run(['status','--porcelain'],path):
+            if git.changes(path):
                 raise ValueError('Commit or finish the current changes before switching task branches; files were preserved.')
             git.run(['fetch','origin',BASES[repository]],path,self.app.token(repository))
             local=git.run(['branch','--list',requested_branch],path)
@@ -87,7 +87,7 @@ class Repositories:
             self.records.write_text(json.dumps(record))
         branch=saved['branch']
         if action in {'checkout','status'}:
-            if action=='checkout' and not git.run(['status','--porcelain'],path):
+            if action=='checkout' and not git.changes(path):
                 self.pull(path,remote,branch,repository)
             return {'path':str(path),'branch':git.run(['branch','--show-current'],path),'status':git.run(['status','--short'],path)}
         if action=='diff':return {'diff':git.run(['diff','HEAD'],path)[:48000]}

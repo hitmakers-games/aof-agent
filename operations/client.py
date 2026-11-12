@@ -67,7 +67,7 @@ def start(actor, chat_id, action, plan_id, dockerfile,branch):
         if action=='deploy':sources.insert(0,('aof-agent','app.tar.gz',None))
         for name, filename, paths in sources:
             path = repositories.root/name
-            if path.exists() and git.run(['status','--porcelain'],path):
+            if path.exists() and git.changes(path):
                 raise ValueError('Commit the '+name+' changes before deploying or planning.')
             repositories.execute('checkout',repository=name,branch=branch if name=='aof-agent' else 'master')
             repositories.execute('push',repository=name)
@@ -83,6 +83,8 @@ def start(actor, chat_id, action, plan_id, dockerfile,branch):
     try:
         job = kube.create(jobs.controller(request,image,source['metadata']['name']))
     except Exception:
+        (target/'status.json').write_text(json.dumps({'id':operation_id,'state':'failed',
+            'error':'Controller could not be started; source and working changes were preserved.'}))
         kube.run(['delete','configmap',request['source']])
         raise
     kube.patch('configmaps',request['source'],{'metadata':{'ownerReferences':[

@@ -9,8 +9,11 @@ from telegram.storage import setting, queue_report
 
 
 def recover(db):
-    operation_id = setting(db,'self_deploy','')
+    operation_id = setting(db,'self_deploy','') or setting(db,'latest_operation','')
     if not operation_id:
+        return
+    current=json.loads(setting(db,'operation:'+operation_id,'{}'))
+    if current.get('state') in {'completed','failed','planned'} and setting(db,'self_deploy','')!=operation_id:
         return
     kube = Kube()
     try:

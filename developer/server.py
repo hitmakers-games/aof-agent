@@ -4,6 +4,7 @@ sys.path.insert(0,'/opt/aof-agent')
 
 import json
 import os
+import time
 
 from developer.git_tools import Repositories
 from developer.jira import Jira
@@ -12,7 +13,7 @@ from developer.session import workspace
 from gateway import access
 from gateway.redaction import redact
 from telegram.history import read,chats
-from telegram.storage import connect
+from telegram.storage import connect,put
 
 
 def schema(properties,required=()):
@@ -68,7 +69,12 @@ class Developer:
         elif name=='telegram_history':result=read(self.db,self.actor,self.chat,**args)
         elif name=='telegram_chats':result=chats(self.db,self.actor,self.chat)
         else:raise ValueError('Unknown developer tool')
-        with self.db:access.audit(self.db,self.actor,'tool.'+name,args.get('action','read'))
+        with self.db:
+            if name in {'self_deploy','terraform'} and result.get('state')=='queued':
+                self.db.execute('INSERT INTO settings VALUES (?,?) ON CONFLICT(key) DO NOTHING',
+                    ('operation:'+result['id'],json.dumps({**result,'updated':time.time()})))
+                put(self.db,'latest_operation',result['id'])
+            access.audit(self.db,self.actor,'tool.'+name,args.get('action','read'))
         return clean(result)
 
 

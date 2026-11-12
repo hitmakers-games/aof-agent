@@ -19,7 +19,8 @@ def environment(kubeconfig):
     # unused by the targeted agent module and must never be copied into its jobs.
     for name in ('selectel_domain_name','selectel_username','selectel_password','selectel_project_id',
                  'postgres_s3_access_key','postgres_s3_secret_key','frontend_s3_access_key',
-                 'frontend_s3_secret_key','registry_username','registry_password'):
+                 'frontend_s3_secret_key','registry_username','registry_password','content_manager_git_token',
+                 'public_sites_backup_s3_access_key','public_sites_backup_s3_secret_key'):
         result['TF_VAR_'+name]='unused-by-agent-module'
     cache=Path('/workspace/.terraform-cache')
     cache.mkdir(exist_ok=True,mode=0o700)
