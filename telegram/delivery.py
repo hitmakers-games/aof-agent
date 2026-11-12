@@ -55,4 +55,8 @@ def deliver_one(db, api):
         if key and message_id:
             db.execute('''INSERT INTO message_handles VALUES (?,?,?) ON CONFLICT(recipient,message_key)
                           DO UPDATE SET message_id=excluded.message_id''', (actor, key, message_id))
+        if message_id:
+            from telegram.history import record
+            record(db,{'message_id':message_id,'chat':{'id':actor},'text':text,
+                'from':{'id':int(setting(db,'bot_id','0')),'username':setting(db,'bot_username','AofAgentBot')}})
     return True

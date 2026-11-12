@@ -75,13 +75,14 @@ class ChatTests(unittest.TestCase):
         bot.handle_update(self.db, update, "", 0)
         self.assertEqual(self.db.execute("SELECT status FROM inbox WHERE update_id=2").fetchone()[0], "queued")
 
-    def test_chat_command_disables_execution_and_repository_context(self):
-        with patch.object(chat, "run_codex", return_value={"response":"Hello"}) as run:
-            self.assertEqual(chat.model_reply("test"), "Hello")
+    def test_chat_command_enables_developer_tools_with_trusted_identity(self):
+        with patch('developer.session.workspace',return_value=Path(self.temp.name)),patch.object(chat, "run_codex", return_value={"response":"Hello"}) as run:
+            self.assertEqual(chat.model_reply("test",actor=123,chat_id=123), "Hello")
         args=run.call_args.args[0]
-        self.assertIn("features.shell_tool=false",args)
-        self.assertIn("project_doc_max_bytes=0",args)
-        self.assertEqual(args[args.index("--sandbox")+1],"read-only")
+        self.assertNotIn("features.shell_tool=false",args)
+        self.assertNotIn('--sandbox',args)
+        self.assertIn('default_permissions="developer"',args)
+        self.assertIn('mcp_servers.developer.required=true',args)
 
     def test_additive_migration_preserves_existing_inbox(self):
         path=Path(self.temp.name)/"old.sqlite3"

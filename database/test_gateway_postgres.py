@@ -133,7 +133,7 @@ class GatewayPostgresTests(unittest.TestCase):
         self.assertEqual(self.db.execute('SELECT update_id,text,status,created_at FROM inbox').fetchall(),before)
         self.assertEqual(self.db.execute('SELECT chat_id,requested_by FROM inbox').fetchone(),(123,123))
         self.assertEqual(self.db.execute('SELECT text,delivered,chat_id FROM outbox').fetchone(),('Synthetic pending report',0,123))
-        self.assertEqual(self.db.execute('SELECT max(version) FROM schema_migrations').fetchone()[0],3)
+        self.assertEqual(self.db.execute('SELECT max(version) FROM schema_migrations').fetchone()[0],4)
         initialize(self.db)
         self.assertEqual(self.db.execute('SELECT update_id,text,status,created_at FROM inbox').fetchall(),before)
 

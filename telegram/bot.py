@@ -89,7 +89,7 @@ def serve(state, secret):
             next_typing = refresh_typing(db, api, next_typing)
             updates = api.call("getUpdates", offset=int(setting(db, "offset", "0")),
                                timeout=0 if delivered else 2, limit=20,
-                               allowed_updates=["message", "callback_query"])
+                               allowed_updates=["message", "edited_message", "callback_query"])
             for update in updates:
                 notice = handle_update(db, update, pairing_code, expires)
                 if notice and 'callback_query_id' in notice:

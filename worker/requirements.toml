@@ -4,8 +4,9 @@ allow_login_shell = false
 allow_managed_hooks_only = true
 allowed_login_methods = ["chatgpt"]
 
-# Integrations belong to the future controller, outside the coding process.
-[mcp_servers]
+# Trusted tool code runs outside command sandboxes and keeps credentials private.
+[mcp_servers.developer.identity]
+command = { executable = "/usr/bin/python3", args = [{ match = "exact", value = "-I" }, { match = "exact", value = "/opt/aof-agent/developer/server.py" }] }
 
 [permissions.filesystem]
 # Codex creates its sandbox executable aliases under CODEX_HOME/tmp. Blocking

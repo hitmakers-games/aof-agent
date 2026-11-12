@@ -4,6 +4,8 @@ import re
 
 
 def redact(text):
+    text = re.sub(r'-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----.*?-----END (?:RSA |EC |OPENSSH )?PRIVATE KEY-----','[redacted private key]',text,flags=re.DOTALL)
+    text = re.sub(r'\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b','[redacted token]',text)
     text = re.sub(r"(?i)\b(?:bearer\s+)[^\s,;\"']+", "Bearer [redacted]", text)
     text = re.sub(r"\b(?:sk-|gh[pousr]_)[A-Za-z0-9_-]+", "[redacted]", text)
     text = re.sub(r"\b\d{7,12}:[A-Za-z0-9_-]{20,}\b", "[redacted]", text)

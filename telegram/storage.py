@@ -13,7 +13,7 @@ def connect(path):
         try:
             db = Connection(Path(os.environ["AOF_DATABASE_DSN_FILE"]).read_text().strip(),
                             os.environ["AOF_DATABASE_CA_FILE"], os.environ.get("AOF_DATABASE_NAME"))
-            if db.execute("SELECT max(version) FROM schema_migrations").fetchone()[0] not in (2, 3):
+            if db.execute("SELECT max(version) FROM schema_migrations").fetchone()[0] not in (2, 3, 4):
                 db.close()
                 raise StorageError("Unsupported database schema")
             return db
@@ -68,6 +68,8 @@ def connect(path):
             work_id TEXT NOT NULL REFERENCES work_items(id),attempt INTEGER NOT NULL,revision TEXT NOT NULL,
             phase TEXT NOT NULL,result TEXT,created_at DOUBLE PRECISION NOT NULL,updated_at DOUBLE PRECISION NOT NULL,
             UNIQUE(work_id,attempt))''')
+        for statement in (Path(__file__).parent.parent/'database/developer.sql').read_text().split(';'):
+            if statement.strip():db.execute(statement)
         db.commit()
     except BaseException:
         db.rollback()
