@@ -13,12 +13,16 @@ def validate(items):
         raise ValueError('A proposal must contain 1 to 10 tasks.')
     cleaned=[]
     for item in items:
-        if not isinstance(item,dict) or set(item)-{'title','description'}:
-            raise ValueError('Only title and description are allowed in a draft.')
+        if not isinstance(item,dict) or set(item)-{'title','description','repositories'}:
+            raise ValueError('Only title, description and repositories are allowed in a draft.')
         title,description=item.get('title'),item.get('description','')
         if not isinstance(title,str) or not isinstance(description,str) or not title.strip() or len(title)>200 or len(description)>3000:
             raise ValueError('Draft title/description exceeds its limit.')
-        cleaned.append({'title':title.strip(),'description':description.strip() or title.strip()})
+        draft={'title':title.strip(),'description':description.strip() or title.strip()}
+        if item.get('repositories'):
+            from coding.config import repositories
+            draft['repositories']=repositories(item['repositories'])
+        cleaned.append(draft)
     payload=json.dumps(cleaned,ensure_ascii=False)
     if len(payload.encode())>24000:
         raise ValueError('Draft batch exceeds 24 KiB.')
@@ -64,7 +68,7 @@ def confirm(db, actor, request_id, revision, action):
     items=json.loads(row[1])
     for position,item in enumerate(items):
         assignment=work.create(db,actor,item['title'],item['description'],'agent',
-                               origin_action=request_id+':'+str(position),shared=True)
+                               origin_action=request_id+':'+str(position),shared=True,repositories=item.get('repositories'))
         if run:
             work.approve(db,actor,assignment['id'],assignment['revision'])
     access.audit(db,actor,'draft.registered',request_id,{'count':len(items),'queue_after_register':run})

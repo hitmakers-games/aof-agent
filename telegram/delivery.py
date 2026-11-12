@@ -7,16 +7,18 @@ from telegram.storage import setting
 
 
 def deliver_one(db, api):
-    row = db.execute('''SELECT id,text,chat_id,required_role,reply_markup,message_key FROM outbox
+    row = db.execute('''SELECT id,text,chat_id,required_role,reply_markup,message_key,authorized_by FROM outbox
                         WHERE delivered=0 ORDER BY id LIMIT 1''').fetchone()
     if row is None:
         return False
-    report_id, text, actor, minimum, markup, key = row
+    report_id, text, actor, minimum, markup, key, authorized_by = row
     actor = actor or setting(db, 'owner')
     if actor is None:
         return False
     actor = int(actor)
-    if not access.allowed(db, actor, minimum):
+    from telegram.groups import enabled
+    permitted = access.allowed(db,actor,minimum) if actor>0 else enabled(db,actor) and access.allowed(db,authorized_by,minimum)
+    if not permitted:
         with db:
             db.execute('UPDATE outbox SET delivered=1 WHERE id=?', (report_id,))
         return True

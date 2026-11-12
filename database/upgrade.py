@@ -18,7 +18,7 @@ def main():
         after={table:db.execute('SELECT count(*) FROM '+table).fetchone()[0] for table in before}
         if before!=after:
             raise StorageError('Unexpected row-count change')
-        print(json.dumps({'schema_version':2,'original_table_counts_preserved':after,
+        print(json.dumps({'schema_version':3,'original_table_counts_preserved':after,
                           'legacy_chats_backfilled':db.execute('SELECT count(*) FROM inbox WHERE chat_id IS NOT NULL').fetchone()[0]}))
     finally:
         db.close()

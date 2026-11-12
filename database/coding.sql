@@ -1,0 +1,18 @@
+ALTER TABLE work_items ADD COLUMN IF NOT EXISTS repositories TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE work_items ADD COLUMN IF NOT EXISTS attempt INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE work_items ADD COLUMN IF NOT EXISTS result TEXT;
+ALTER TABLE work_items ADD COLUMN IF NOT EXISTS pull_requests TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE work_items ADD COLUMN IF NOT EXISTS checkpoint TEXT;
+ALTER TABLE outbox ADD COLUMN IF NOT EXISTS authorized_by BIGINT;
+CREATE TABLE IF NOT EXISTS coding_runs (
+    id TEXT PRIMARY KEY,
+    work_id TEXT NOT NULL REFERENCES work_items(id),
+    attempt INTEGER NOT NULL,
+    revision TEXT NOT NULL,
+    phase TEXT NOT NULL,
+    result TEXT,
+    created_at DOUBLE PRECISION NOT NULL,
+    updated_at DOUBLE PRECISION NOT NULL,
+    UNIQUE(work_id, attempt)
+);
+INSERT INTO schema_migrations(version) VALUES (3) ON CONFLICT DO NOTHING;

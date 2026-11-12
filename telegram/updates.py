@@ -54,6 +54,10 @@ def handle_update(db, update, pairing_code, pairing_expires_at, now=None):
                 notice={'callback_query_id':callback['id'],'text':result[:180]}
         else:
             message=update.get('message')
+            from telegram.groups import handle
+            if isinstance(message,dict) and handle(db,update_id,message):
+                put(db,'offset',update_id+1)
+                return None
             actor=identity(message)
             text=message.get('text','') if isinstance(message,dict) else ''
             if actor and isinstance(text,str):

@@ -8,11 +8,11 @@ from gateway import access
 from telegram.storage import setting
 
 
-TERMINAL = {'cancelled', 'failed', 'ready_for_review'}
+TERMINAL = {'cancelled', 'failed', 'interrupted', 'ready_for_review'}
 
 
-def revision(title, description, mode='ask'):
-    payload = json.dumps([title.strip(), description.strip()], ensure_ascii=False)
+def revision(title, description, mode='ask', repositories=None):
+    payload = json.dumps([title.strip(), description.strip(), repositories or []], ensure_ascii=False)
     return hashlib.sha256(payload.encode()).hexdigest()
 
 
@@ -37,13 +37,18 @@ def require_item(db, actor, reference, minimum='viewer', lock=False):
 
 
 def create(db, actor, title, description='', source='telegram', mode='ask', external_id=None,
-           issue_key=None, origin_action=None, notify=True, shared=False):
+           issue_key=None, origin_action=None, notify=True, shared=False, repositories=None):
     if actor is not None:
         access.require(db, actor, 'operator')
     if not title.strip() or len(title) > 500 or len(description) > 32000:
         raise ValueError('Task title or description exceeds its limit.')
     task_id = uuid.uuid4().hex
-    rev = revision(title, description, mode)
+    issue_key = issue_key or 'TG-' + task_id[:12]
+    names = []
+    if repositories:
+        from coding.config import repositories as validate
+        names = validate(repositories)
+    rev = revision(title, description, mode, names)
     automatic = actor is not None and mode == 'auto' and setting(db, 'autostart', 'off') == 'on' and not origin_action
     state = 'queued' if automatic else 'awaiting_approval'
     now = time.time()
@@ -53,6 +58,7 @@ def create(db, actor, title, description='', source='telegram', mode='ask', exte
                (task_id, source, external_id, issue_key, title.strip(), description.strip(), rev, state, mode,
                 'shared' if shared or source == 'jira' else 'private', actor, rev if automatic else None,
                 origin_action, now, now, actor if automatic else None, 'automatic' if automatic else None))
+    db.execute('UPDATE work_items SET repositories=? WHERE id=?', (json.dumps(names), task_id))
     access.audit(db, actor, 'work.received', task_id, {'source': source, 'automatic': automatic})
     if notify:
         from gateway.notices import add
@@ -64,6 +70,8 @@ def approve(db, actor, reference, expected_revision=None):
     item = require_item(db, actor, reference, 'operator', lock=True)
     if expected_revision and item['revision'] != expected_revision:
         return 'changed'
+    if setting(db, 'coding_enabled', '0') == '1' and not json.loads(item['repositories']):
+        raise ValueError('Select repositories first: /repo ' + item['id'] + ' aof-agent')
     if item['state'] in TERMINAL or item['state'] == 'running':
         return item['state']
     if item['state'] == 'cancelling':
@@ -94,23 +102,28 @@ def describe(db, actor, reference):
     text = f"{item['issue_key'] or item['id']}: {item['state']}"
     if access.allowed(db, actor, 'operator'):
         text += '\n' + item['title']
+        names = json.loads(item['repositories'])
+        text += '\nRepositories: ' + (', '.join(names) or 'not selected; use /repo')
+        if item['checkpoint']:
+            text += '\nProgress: ' + item['checkpoint']
+        text += ''.join('\n' + link for link in json.loads(item['pull_requests']))
     if item['state'] == 'queued':
-        text += '\nApproved; waiting for the coding worker.'
+        text += '\nApproved; waiting for an available coding worker.'
     return text
 
 
-def listing(db, actor):
+def listing(db, actor, shared_only=False):
     rows = db.execute('''SELECT id,issue_key,state,visibility,requester_id FROM work_items
                          ORDER BY created_at DESC LIMIT 100''').fetchall()
     return '\n'.join(f'{key or uid}: {state}' for uid, key, state, visibility, owner in rows
-                     if visibility == 'shared' or owner == actor)[:3500] or 'No assignments yet.'
+                     if visibility == 'shared' or (not shared_only and owner == actor))[:3500] or 'No assignments yet.'
 
 
 def amend(db, actor, reference, description):
     item = require_item(db,actor,reference,'operator',lock=True)
     if not description.strip() or len(description)>32000:
         raise ValueError('Please include the updated scope (at most 32000 characters).')
-    new_revision=revision(item['title'],description)
+    new_revision=revision(item['title'],description,repositories=json.loads(item['repositories']))
     if new_revision==item['revision']:
         return 'Scope unchanged.'
     state='cancelling' if item['state']=='running' else 'held' if item['held'] else 'awaiting_approval'

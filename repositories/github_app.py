@@ -68,8 +68,8 @@ class GitHubApp:
                 or data.get("suspended_at")):
             raise AccessError("The App installation does not match the configured organization.")
 
-    def token(self, repository=None):
-        body = {"permissions": {"contents": "read"}}
+    def token(self, repository=None, permissions=None):
+        body = {"permissions": permissions or {"contents": "read"}}
         if repository is not None:
             body["repositories"] = [repository]
         return self.request(f"/app/installations/{self.installation_id}/access_tokens",

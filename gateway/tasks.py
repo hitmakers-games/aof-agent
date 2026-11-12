@@ -17,12 +17,12 @@ def task(db, task_id, lock=False):
     return dict(zip([c[0] for c in cursor.description], row)) if row else None
 
 
-def enqueue(db, update_id, text, kind="message", target=None, component="backend", window=15, actor=None, context=None):
+def enqueue(db, update_id, text, kind="message", target=None, component="backend", window=15, actor=None, context=None, chat_id=None):
     actor = actor if actor is not None else setting(db, 'owner')
     actor = int(actor) if actor is not None else None
     if actor is not None:
         access.require(db, actor, 'operator')
-        pending = db.execute("SELECT count(*) FROM inbox WHERE chat_id=? AND status IN ('queued','running','cancelling')", (actor,)).fetchone()[0]
+        pending = db.execute("SELECT count(*) FROM inbox WHERE requested_by=? AND status IN ('queued','running','cancelling')", (actor,)).fetchone()[0]
         if pending >= 5:
             raise ValueError('You already have five pending requests. Use /tasks or wait for a result.')
     count = db.execute("SELECT count(*) FROM inbox WHERE status IN (?,?,?)", ACTIVE).fetchone()[0]
@@ -30,11 +30,11 @@ def enqueue(db, update_id, text, kind="message", target=None, component="backend
         raise ValueError("The task queue is full. Use /tasks and /cancel before adding work.")
     db.execute("""INSERT INTO inbox(update_id,text,status,kind,target,component,"window",checkpoint,chat_id,requested_by,context)
                   VALUES (?,?,'queued',?,?,?,?, 'Waiting for a worker',?,?,?)""",
-               (update_id, text, kind, target, component, window, actor, actor, context))
+               (update_id, text, kind, target, component, window, chat_id or actor, actor, context))
     worker_online = time.time() - float(setting(db, "engine_heartbeat", "0")) < 180
     if kind != "message" or count or not worker_online:
         queue_report(db, f"Received #{update_id}: {kind}" + (f" on {target}" if target else "") +
-                     f". Use /status {update_id} or /cancel {update_id}.", actor)
+                     f". Use /status {update_id} or /cancel {update_id} in private chat.", chat_id or actor,authorized_by=actor)
 
 
 def claim(db, worker):
@@ -58,7 +58,7 @@ def claim(db, worker):
                 db.commit()
                 return None
             if item["kind"] != "message":
-                queue_report(db, f"Started #{row[0]}: {item['checkpoint']}.", item['chat_id'])
+                queue_report(db, f"Started #{row[0]}: {item['checkpoint']}.", item['chat_id'],authorized_by=item['requested_by'])
         db.commit()
     except BaseException:
         db.rollback()
@@ -104,7 +104,10 @@ def finish(db, task_id, response, status="completed", proposals=None):
                    (status, response, status.capitalize(), task_id))
         text = response if item["kind"] == "message" and status == "completed" else f"#{task_id} — {status}\n{response}"
         if not proposals or status != 'completed':
-            queue_report(db, text, item['chat_id'])
+            queue_report(db, text, item['chat_id'],authorized_by=item['requested_by'])
+        elif item['chat_id'] and item['chat_id']<0:
+            queue_report(db,'Task drafts are ready. Review the private message from the bot; nothing was registered yet.',
+                         item['chat_id'],authorized_by=item['requested_by'])
 
 
 def save_evidence(db, task_id, evidence):

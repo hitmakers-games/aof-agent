@@ -66,10 +66,11 @@ def command(workspace, mode, model=None):
     return args + ["-"]
 
 
-def result_from_events(events):
+def result_from_events(events, include_commands=False):
     final = None
     usage = None
     failed = False
+    commands = []
     for line in events:
         if len(line) > MAX_EVENT_BYTES:
             raise TaskError("Codex event exceeded the output limit")
@@ -86,11 +87,16 @@ def result_from_events(events):
             item = event.get("item", {})
             if isinstance(item, dict) and item.get("type") == "agent_message":
                 final = item.get("text")
+            if isinstance(item, dict) and item.get('type') == 'command_execution':
+                commands.append({'command':str(item.get('command',''))[:2000], 'exit_code':item.get('exit_code')})
         if kind == "turn.completed":
             usage = event.get("usage", {})
     if failed or usage is None or not isinstance(final, str) or not final.strip():
         raise TaskError("Codex did not finish the task successfully")
-    return {"response": final, "usage": usage}
+    result = {"response": final, "usage": usage}
+    if include_commands:
+        result['commands'] = commands[-200:]
+    return result
 
 
 def terminate(process):
@@ -111,7 +117,7 @@ def terminate(process):
         process.wait(timeout=5)
 
 
-def run_codex(args, prompt, timeout, environment, cancelled=None):
+def run_codex(args, prompt, timeout, environment, cancelled=None, include_commands=False):
     # Raw command output can contain private repository information. Keep it off
     # pod logs and discard it after extracting the final response.
     with tempfile.TemporaryFile() as output, tempfile.TemporaryFile() as task_input:
@@ -138,7 +144,7 @@ def run_codex(args, prompt, timeout, environment, cancelled=None):
             if os.fstat(output.fileno()).st_size > MAX_EVENTS_BYTES:
                 raise TaskError("Codex exceeded the output limit")
             output.seek(0)
-            return result_from_events(iter(lambda: output.readline(MAX_EVENT_BYTES + 1), b""))
+            return result_from_events(iter(lambda: output.readline(MAX_EVENT_BYTES + 1), b""), include_commands)
         finally:
             terminate(process)
 

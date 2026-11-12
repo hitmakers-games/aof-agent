@@ -133,7 +133,7 @@ class GatewayPostgresTests(unittest.TestCase):
         self.assertEqual(self.db.execute('SELECT update_id,text,status,created_at FROM inbox').fetchall(),before)
         self.assertEqual(self.db.execute('SELECT chat_id,requested_by FROM inbox').fetchone(),(123,123))
         self.assertEqual(self.db.execute('SELECT text,delivered,chat_id FROM outbox').fetchone(),('Synthetic pending report',0,123))
-        self.assertEqual(self.db.execute('SELECT max(version) FROM schema_migrations').fetchone()[0],2)
+        self.assertEqual(self.db.execute('SELECT max(version) FROM schema_migrations').fetchone()[0],3)
         initialize(self.db)
         self.assertEqual(self.db.execute('SELECT update_id,text,status,created_at FROM inbox').fetchall(),before)
 
@@ -149,6 +149,29 @@ class GatewayPostgresTests(unittest.TestCase):
         self.assertEqual(self.db.execute('SELECT max(version) FROM schema_migrations').fetchone()[0],1)
         self.assertEqual(self.db.execute("SELECT count(*) FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='inbox' AND column_name='chat_id'").fetchone()[0],0)
         self.assertEqual(self.db.execute('SELECT text FROM inbox').fetchone()[0],'Synthetic saved conversation')
+
+    def test_concurrent_coding_claims_execute_once(self):
+        from coding import queue
+        with self.db:
+            put(self.db,'coding_enabled',1)
+            item=work.create(self.db,123,'Synthetic code change','Details',repositories=['aof-agent'])
+            work.approve(self.db,123,item['id'])
+        results=self.parallel(queue.claim)
+        self.assertEqual(sum(result is not None for result in results),1)
+        self.assertEqual(self.db.execute('SELECT count(*) FROM coding_runs').fetchone()[0],1)
+
+    def test_revoke_cancels_coding_and_regrant_does_not_restore_approval(self):
+        from coding import queue
+        with self.db:
+            put(self.db,'coding_enabled',1)
+            item=work.create(self.db,789,'Synthetic code change','Details',repositories=['aof-agent'])
+            work.approve(self.db,789,item['id'])
+        claimed=queue.claim(self.db)
+        with self.db:access.revoke(self.db,123,789)
+        self.assertTrue(queue.cancelled(self.db,claimed))
+        queue.finish(self.db,claimed,'cancelled','Stopped')
+        with self.db:access.grant(self.db,123,789,'operator')
+        self.assertIsNone(queue.claim(self.db))
 
 
 if __name__=='__main__':

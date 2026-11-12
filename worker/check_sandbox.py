@@ -8,7 +8,7 @@ import tempfile
 
 def check():
     Path(os.environ["CODEX_HOME"]).mkdir(parents=True, exist_ok=True, mode=0o700)
-    with tempfile.TemporaryDirectory(prefix=".sandbox-check-", dir="/workspace") as directory:
+    with tempfile.TemporaryDirectory(prefix=".sandbox-check-", dir=os.environ.get('AOF_SANDBOX_CHECK_ROOT','/workspace')) as directory:
         # This public canary is baked into the image under a managed deny_read
         # path. No real login or repository is needed for this startup check.
         script = """

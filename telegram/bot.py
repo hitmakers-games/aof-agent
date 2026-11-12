@@ -28,7 +28,7 @@ def engine_ready(db, now=None):
 
 def status_text(db):
     if engine_ready(db):
-        return "Developer gateway connected. Use /help for tasks and stand diagnostics. Coding execution is not enabled yet."
+        return "Developer gateway connected. Use /help for tasks and stand diagnostics. Use /status for coding availability."
     return STATUS
 
 
@@ -43,8 +43,14 @@ def refresh_typing(db, api, next_refresh=0, now=None):
         return next_refresh
     delay = 4
     for (actor,) in people:
-        if actor is None or not access.allowed(db,int(actor),'operator'):
+        if actor is None:
             continue
+        if int(actor)>0 and not access.allowed(db,int(actor),'operator'):
+            continue
+        if int(actor)<0:
+            from telegram.groups import enabled
+            if not enabled(db,int(actor)):
+                continue
         try:
             api.call('sendChatAction',chat_id=int(actor),action='typing',_timeout=3)
         except TelegramError as error:
@@ -68,6 +74,7 @@ def serve(state, secret):
         raise ValueError("Bot already has a webhook; refusing to take it over")
     with db:
         put(db, "bot_id", me["id"])
+        put(db, "bot_username", me['username'])
     Path("/tmp/bot-identity.json").write_text(json.dumps({"username": me["username"]}))
     Path("/tmp/telegram-ready").touch()
     print("Telegram connected; private-chat pairing required" if not setting(db, "owner")

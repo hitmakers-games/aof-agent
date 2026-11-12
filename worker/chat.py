@@ -24,32 +24,36 @@ This installation can collect stand health and privacy-filtered log summaries.
 Those commands run in a separate gateway worker; you cannot invoke them yourself.
 Only claim observations present in supplied evidence. If evidence is missing,
 suggest the relevant /health, /logs, or /analyze command instead of inventing results.
-Git/Jira, repository access, code execution, deployment and database access are
-not enabled. Do not claim to have performed unavailable actions. For a coding
-assignment, provide a useful plan and identify the missing access.
+This conversation worker has no shell tools. A separate coding executor can edit
+approved repository checkouts, run tests, commit and push task branches. PRs are disabled. It cannot
+merge, deploy, or access game databases. Do not claim you already performed those
+actions in chat. Suggest /status, /work and /result for actual execution evidence.
 The gateway has separate assignments with explicit approval. Ordinary chat is
-private to this user. A Jira assignment is first received, then approved/queued;
-only the controller can authorize or start work. The coding worker is not enabled.
-When the user asks you to prepare or create tasks, prepare local drafts by returning ONLY
+private to this user. Only the controller can authorize or start work.
+When the user requests implementation, fixes, or asks to prepare tasks, prepare local drafts by returning ONLY
 JSON with this structure: {"kind":"task_proposal","reply":"brief explanation",
-"tasks":[{"title":"...","description":"..."}]}. Limit to 10 concrete tasks.
-Do not include execution flags, project names or permission requests in that JSON.
+"tasks":[{"title":"...","description":"...","repositories":["aof-agent"]}]}. Limit to 10 concrete tasks.
+Repositories are aof-back, aof-front, aof-play, aof-rustore, aof-agent,
+aof-content-manager, aof-infra, aof-apple. Select only repositories clearly supported
+by the user's request; ask for clarification if ambiguous. Do not include execution flags or permissions.
 The gateway will show review buttons and register tasks only after authorization. Jira integration is deferred.
 Otherwise reply normally. Never claim drafts were already registered or implemented.
 """
 
 
-def prompt_for(db, text, actor=None):
+def prompt_for(db, text, actor=None, chat_id=None):
     from telegram.storage import setting
     actor = actor if actor is not None else setting(db, 'owner')
+    conversation = chat_id if chat_id is not None else actor
     rows = db.execute("""SELECT text,response FROM inbox WHERE status='completed'
                        AND kind IN ('message','task','bug','analyze') AND response IS NOT NULL
                        AND (chat_id=? OR (chat_id IS NULL AND ?=?))
                        ORDER BY created_at DESC,update_id DESC LIMIT 12""",
-                      (actor,str(actor),setting(db,'owner'))).fetchall()
+                      (conversation,str(conversation),setting(db,'owner'))).fetchall()
     history = [{"user": redact(row[0]), "assistant": redact(row[1])} for row in reversed(rows)]
     while True:
-        prompt = INSTRUCTIONS + "\n" + json.dumps({"history": history, "user": redact(text)}, ensure_ascii=False)
+        context=setting(db,'developer_context','')[:10000]
+        prompt = INSTRUCTIONS + "\n" + json.dumps({"project_context":context,"history": history, "user": redact(text)}, ensure_ascii=False)
         if len(prompt.encode()) <= 64 * 1024:
             return prompt
         if not history:
@@ -70,7 +74,7 @@ def process_one(db, reply=None):
     if item["context"]:
         text += "\n\nObserved stand evidence:\n" + item["context"]
     try:
-        prompt = prompt_for(db, text, item['requested_by'])
+        prompt = prompt_for(db, text, item['requested_by'],item['chat_id'])
         if tasks.cancellation_requested(db, task_id):
             raise TaskCancelled("Task cancelled")
         response = (reply(prompt) if reply else model_reply(
