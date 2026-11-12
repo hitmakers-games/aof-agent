@@ -1,5 +1,6 @@
 """Check a new image against the current database without changing any data."""
-from gateway import work
+import time
+from gateway import work, tasks
 from telegram.storage import connect, setting
 
 
@@ -7,6 +8,8 @@ def check(db):
     # Schema-dependent reads must pass before replacing the working bot.
     # Do not print task contents, credentials, or run schema migrations here.
     work.listing(db, int(setting(db, 'owner')))
+    for worker in ('model','operations'):
+        db.execute(tasks.selection(worker),(time.time(),)).fetchone()
     for table in ('inbox', 'outbox', 'coding_runs', 'telegram_messages'):
         db.execute('SELECT 1 FROM '+table+' LIMIT 0')
 

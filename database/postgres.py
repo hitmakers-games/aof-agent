@@ -53,6 +53,8 @@ class Connection:
                 return None
             query = "BEGIN"
         try:
+            if parameters is not None:
+                query=query.replace('%','%%')
             return Cursor(self.raw.execute(query.replace("?", "%s"), parameters))
         except psycopg.Error:
             raise StorageError("PostgreSQL operation failed") from None

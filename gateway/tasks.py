@@ -49,27 +49,31 @@ def enqueue(db, update_id, text, kind="message", target=None, component="backend
                      f". Use /status {update_id} or /cancel {update_id} in private chat.", chat_id or actor,authorized_by=actor)
 
 
-def claim(db, worker):
-    if worker=='model' and setting(db,'self_deploy',''):
-        import json
-        operation=json.loads(setting(db,'operation:'+setting(db,'self_deploy'),'{}'))
-        if operation.get('state') in {'restarting','applying','rolling-back'}:
-            return None
+def selection(worker):
     if worker == "model":
         condition = "(kind IN ('message','task','bug') OR (kind='analyze' AND context IS NOT NULL))"
     elif worker == "operations":
         condition = "kind IN ('health','logs','changes','analyze') AND context IS NULL"
     else:
         raise ValueError("Unknown worker")
-    db.execute("BEGIN IMMEDIATE")
-    try:
-        if worker=='model' and getattr(db,'row_lock',''):
-            db.execute('SELECT pg_advisory_xact_lock(3350006)')
-        query = f"""SELECT update_id FROM inbox q WHERE status='queued' AND {condition}
+    return f"""SELECT update_id FROM inbox q WHERE status='queued' AND {condition}
             AND NOT EXISTS (SELECT 1 FROM settings WHERE key='chat-ready:' || CAST(q.update_id AS TEXT)
                 AND CAST(CASE WHEN key LIKE 'chat-ready:%' THEN value ELSE '0' END AS DOUBLE PRECISION)>?)
             AND NOT EXISTS (SELECT 1 FROM inbox active WHERE active.chat_id=q.chat_id
                 AND active.status IN ('running','cancelling')) ORDER BY created_at,update_id LIMIT 1"""
+
+
+def claim(db, worker):
+    if worker=='model' and setting(db,'self_deploy',''):
+        import json
+        operation=json.loads(setting(db,'operation:'+setting(db,'self_deploy'),'{}'))
+        if operation.get('state') in {'restarting','applying','rolling-back'}:
+            return None
+    db.execute("BEGIN IMMEDIATE")
+    try:
+        if worker=='model' and getattr(db,'row_lock',''):
+            db.execute('SELECT pg_advisory_xact_lock(3350006)')
+        query = selection(worker)
         row = db.execute(query + getattr(db, "claim_lock", ""),(time.time(),)).fetchone()
         if row:
             db.execute("UPDATE inbox SET status='running',started_at=CURRENT_TIMESTAMP,checkpoint=? WHERE update_id=?",

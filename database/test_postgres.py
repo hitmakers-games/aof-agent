@@ -23,6 +23,12 @@ def connect():
 
 
 class PostgresTests(unittest.TestCase):
+    def test_literal_percent_and_bound_question_marks_remain_data(self):
+        self.assertEqual(self.db.execute("SELECT ?::text,'literal % value'",('value with ? and %',)).fetchone(),
+                         ('value with ? and %','literal % value'))
+        self.db.execute(tasks.selection('model'),(0,)).fetchone()
+        self.db.execute(tasks.selection('operations'),(0,)).fetchone()
+
     def setUp(self):
         self.db = connect()
         self.addCleanup(self.db.close)
