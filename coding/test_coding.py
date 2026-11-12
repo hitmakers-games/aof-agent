@@ -54,6 +54,23 @@ class CodingTests(unittest.TestCase):
         queue.finish(self.db,claimed,'ready_for_review','Old result')
         self.assertEqual(work.get(self.db,item['id'])['state'],'awaiting_approval')
 
+    def test_tasks_wait_persistently_for_the_previous_task_to_stop(self):
+        first,second,third=self.task(),self.task(),self.task()
+        current=queue.claim(self.db)
+        self.assertEqual(current['id'],first['id'])
+        another=connect(self.root/'state.sqlite3')
+        try:
+            self.assertIsNone(queue.claim(another))
+            self.assertEqual(work.get(another,third['id'])['state'],'queued')
+            with self.db:work.hold(self.db,123,first['id'])
+            self.assertIsNone(queue.claim(another))
+            queue.finish(self.db,current,'cancelled','Stopped')
+            current=queue.claim(another)
+            self.assertEqual(current['id'],second['id'])
+            queue.finish(another,current,'ready_for_review','Done')
+            self.assertEqual(queue.claim(self.db)['id'],third['id'])
+        finally:another.close()
+
     def test_restart_never_replays_work_and_retry_requires_approval(self):
         item=self.task()
         queue.claim(self.db)

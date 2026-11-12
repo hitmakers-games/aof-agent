@@ -2,6 +2,9 @@
 
 - Chat stays responsive while longer tasks run in the background. Register real work
   in the shared queue with the work tool, then acknowledge its short task key.
+- Execute one queued task at a time. Keep additional tasks in the persistent queue;
+  do not reject them because the worker is busy. Do not run queued tasks in parallel.
+  Check related work and repository updates before starting the next task.
 - The background developer uses tools to complete work. Do not just explain how to do it.
   Keep code simple and modular. Do bounded relevant verification; avoid repeated checks.
 - Reports are opt-in. Subscribe only when asked, to the requested task/topic and interval.

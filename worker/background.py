@@ -1,4 +1,4 @@
-"""Two durable tasks at a time, independent of the conversational worker."""
+"""One durable task at a time, independent of the conversational worker."""
 from concurrent.futures import ThreadPoolExecutor
 import fcntl
 import json
@@ -60,11 +60,11 @@ def main():
         check()
         db=connect('/unused')
         queue.recover(db)
-        with ThreadPoolExecutor(max_workers=2) as pool:
+        with ThreadPoolExecutor(max_workers=1) as pool:
             running=set()
             while True:
                 running={future for future in running if not future.done()}
-                if len(running)<2:
+                if not running:
                     item=queue.claim(db)
                     if item:running.add(pool.submit(process,item))
                 queue.heartbeat(db)

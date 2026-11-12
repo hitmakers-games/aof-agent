@@ -10,13 +10,17 @@ from telegram.storage import put, queue_report, setting
 
 def claim(db):
     with db:
+        db.execute('BEGIN IMMEDIATE')
         if getattr(db,'row_lock',''):
             db.execute('SELECT pg_advisory_xact_lock(3350005)')
         if setting(db, 'coding_enabled', '0') != '1' or setting(db, 'paused', '0') == '1' or setting(db,'self_deploy',''):
             return None
+        # The transaction lock makes this a global limit, across worker processes.
+        if db.execute("SELECT 1 FROM work_items WHERE state IN ('running','cancelling') LIMIT 1").fetchone():
+            return None
         row = db.execute("""SELECT id FROM work_items WHERE state='queued'
             AND approved_revision=revision AND held=0 AND cancel_requested=0
-            ORDER BY created_at LIMIT 1""" + getattr(db, 'claim_lock', '')).fetchone()
+            ORDER BY created_at,id LIMIT 1""" + getattr(db, 'claim_lock', '')).fetchone()
         if not row:
             return None
         item = work.get(db, row[0])
