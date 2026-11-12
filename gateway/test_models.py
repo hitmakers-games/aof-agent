@@ -38,10 +38,10 @@ class ModelsTest(unittest.TestCase):
             models.initialize(self.db)
         self.assertEqual(models.selected(self.db, 10), models.PRESETS['fast'])
 
-    def test_other_operator_changes_the_same_shared_preference(self):
+    def test_other_admin_changes_the_same_shared_preference(self):
         from gateway import access
         with self.db:
-            access.grant(self.db, 10, 11, 'operator')
+            access.grant(self.db, 10, 11, 'admin')
             dispatch(self.db, 1, '/reasoning high', 11, chat_id=-20)
         self.assertEqual(models.selected(self.db, 10)['effort'], 'high')
 

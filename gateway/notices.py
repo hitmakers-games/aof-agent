@@ -8,14 +8,9 @@ from telegram.storage import queue_report, setting
 
 
 def recipients(db, item):
-    if item['visibility'] == 'private':
-        return [item['requester_id']] if access.allowed(db, item['requester_id'], 'operator') else []
-    owner = setting(db, 'owner')
-    people = {int(owner)} if owner else set()
-    if access.allowed(db,item['requester_id'],'operator'):
-        people.add(item['requester_id'])
+    people = set()
     for (user,) in db.execute("SELECT user_id FROM members WHERE active=1 AND role IN ('operator','admin')"):
-        if setting(db, f'watch:{user}', 'off') == 'on':
+        if setting(db, f'watch:{user}', 'off') == 'on' and work.visible(db,user,item):
             people.add(user)
     return sorted(people)
 
@@ -52,7 +47,7 @@ def flush(db, now=None):
             entries = db.execute('SELECT work_id,revision FROM notice_items WHERE batch_id=? ORDER BY work_id', (batch_id,)).fetchall()
             items = [work.get(db, uid) for uid, _ in entries]
             items = [item for item in items if work.visible(db, actor, item)]
-            if not items or not access.allowed(db, actor, 'operator'):
+            if not items or not access.allowed(db, actor, 'operator') or setting(db,f'watch:{actor}','off')!='on':
                 db.execute('UPDATE notice_batches SET published=1 WHERE id=?', (batch_id,))
                 continue
             states = {state: sum(item['state']==state for item in items) for state in {i['state'] for i in items}}

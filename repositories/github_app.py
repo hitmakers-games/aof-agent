@@ -42,7 +42,7 @@ class GitHubApp:
             raise AccessError("GitHub App signing failed; check the mounted key.")
         return (unsigned + b"." + encoded(signed.stdout)).decode()
 
-    def request(self, path, token, body=None):
+    def request(self, path, token, body=None, method=None):
         if not path.startswith("/") or ".." in path:
             raise AccessError("Invalid GitHub API path")
         headers = {"Authorization": "Bearer " + token, "Accept": "application/vnd.github+json",
@@ -50,7 +50,7 @@ class GitHubApp:
         data = None if body is None else json.dumps(body).encode()
         if data is not None:
             headers["Content-Type"] = "application/json"
-        request = Request("https://api.github.com" + path, headers=headers, data=data)
+        request = Request("https://api.github.com" + path, headers=headers, data=data, method=method)
         try:
             with self.opener.open(request, timeout=30) as response:
                 result = response.read(2 * 1024 * 1024 + 1)

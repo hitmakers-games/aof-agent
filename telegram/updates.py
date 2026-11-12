@@ -84,8 +84,7 @@ def handle_update(db, update, pairing_code, pairing_expires_at, now=None):
                                 ('The pairing code has expired. Ask for a fresh pairing link.' if expired else
                                  'Send the complete /start command from the setup chat, including its code.')}
                 elif not access.allowed(db,actor):
-                    if head in {'/whoami','/start'}:
-                        notice={'chat_id':actor,'text':f'Your Telegram user ID: {actor}\nNo access. Ask the administrator to grant your numeric ID a role.'}
+                    pass
                 else:
                     def command():
                         if not text.strip() and any(k in message for k in ('photo','document','voice','video')):

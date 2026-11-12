@@ -61,8 +61,11 @@ def wait_for_conversation(db):
 def resume(db, kube, request):
     path = directory(request['id'])/'status.json'
     values = json.loads(path.read_text()) if path.exists() else {}
-    for name,count in values.get('worker_replicas',{}).items():
-        kube.scale(name,count)
+    # A successful deployment already set the replicas from the new chart.
+    # Restoring old counts would resurrect a retired worker after a topology change.
+    if not (request['action']=='deploy' and values.get('state')=='completed'):
+        for name,count in values.get('worker_replicas',{}).items():
+            kube.scale(name,count)
     with db:
         if setting(db,'self_deploy','')==request['id']:
             put(db,'self_deploy','')
@@ -103,6 +106,7 @@ def execute(db, kube, request):
         plan = terraform.plan(root,env,digest,deploy=True)
     else:
         plan = json.loads((target/'status.json').read_text())
+    save(db,request,'restarting')
     wait_for_conversation(db)
     access.require(db,request['actor'],'admin')
     save(db,request,'applying')

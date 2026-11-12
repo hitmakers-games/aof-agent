@@ -31,7 +31,7 @@ def status(operation_id):
     return {'id': operation_id, 'state': 'starting', 'job': Kube().get('jobs', operation_id).get('status', {})}
 
 
-def execute(actor, chat_id, action='status', operation_id=None, dockerfile='worker/app.Dockerfile', branch='master'):
+def execute(actor, chat_id, action='status', operation_id=None, dockerfile='worker/app.Dockerfile', branch='master', work_id=None):
     if action=='status':
         return status(operation_id)
     if action not in {'deploy','plan','apply'} or dockerfile not in {'worker/app.Dockerfile','worker/Dockerfile'}:
@@ -39,10 +39,10 @@ def execute(actor, chat_id, action='status', operation_id=None, dockerfile='work
     ROOT.mkdir(parents=True, exist_ok=True, mode=0o700)
     with open('/transport/developer-control/operation.lock', 'a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
-        return start(actor, chat_id, action, operation_id, dockerfile,branch)
+        return start(actor, chat_id, action, operation_id, dockerfile,branch,work_id)
 
 
-def start(actor, chat_id, action, plan_id, dockerfile,branch):
+def start(actor, chat_id, action, plan_id, dockerfile,branch,work_id=None):
     kube = Kube()
     for item in kube.get('jobs').get('items', []):
         labels = item['metadata'].get('labels', {})
@@ -62,7 +62,7 @@ def start(actor, chat_id, action, plan_id, dockerfile,branch):
             raise ValueError('Only a successfully saved plan can be applied. Run terraform plan first.')
         request['plan_id'] = plan_id
     else:
-        repositories = Repositories(workspace(actor, chat_id))
+        repositories = Repositories(workspace(actor, chat_id, work_id))
         sources=[('aof-infra','infra.tar.gz',archive.INFRA_PATHS)]
         if action=='deploy':sources.insert(0,('aof-agent','app.tar.gz',None))
         for name, filename, paths in sources:

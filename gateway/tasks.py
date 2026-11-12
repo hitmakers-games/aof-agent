@@ -21,7 +21,7 @@ def enqueue(db, update_id, text, kind="message", target=None, component="backend
     actor = actor if actor is not None else setting(db, 'owner')
     actor = int(actor) if actor is not None else None
     if actor is not None:
-        access.require(db, actor, 'operator')
+        access.require(db, actor, 'viewer' if kind=='message' else 'operator')
         pending = db.execute("SELECT count(*) FROM inbox WHERE requested_by=? AND status IN ('queued','running','cancelling')", (actor,)).fetchone()[0]
         if pending >= 5:
             raise ValueError('You already have five pending requests. Use /tasks or wait for a result.')
@@ -34,14 +34,17 @@ def enqueue(db, update_id, text, kind="message", target=None, component="backend
     from gateway.models import snapshot
     snapshot(db, update_id, chat_id or actor, model_options)
     worker_online = time.time() - float(setting(db, "engine_heartbeat", "0")) < 180
-    if kind != "message" or count or not worker_online or setting(db,'self_deploy',''):
+    if kind != "message":
         queue_report(db, f"Received #{update_id}: {kind}" + (f" on {target}" if target else "") +
                      f". Use /status {update_id} or /cancel {update_id} in private chat.", chat_id or actor,authorized_by=actor)
 
 
 def claim(db, worker):
     if worker=='model' and setting(db,'self_deploy',''):
-        return None
+        import json
+        operation=json.loads(setting(db,'operation:'+setting(db,'self_deploy'),'{}'))
+        if operation.get('state') in {'restarting','applying','rolling-back'}:
+            return None
     if worker == "model":
         condition = "(kind IN ('message','task','bug') OR (kind='analyze' AND context IS NOT NULL))"
     elif worker == "operations":
@@ -50,14 +53,18 @@ def claim(db, worker):
         raise ValueError("Unknown worker")
     db.execute("BEGIN IMMEDIATE")
     try:
-        query = f"SELECT update_id FROM inbox WHERE status='queued' AND {condition} ORDER BY created_at,update_id LIMIT 1"
+        if worker=='model' and getattr(db,'row_lock',''):
+            db.execute('SELECT pg_advisory_xact_lock(3350006)')
+        query = f"""SELECT update_id FROM inbox q WHERE status='queued' AND {condition}
+            AND NOT EXISTS (SELECT 1 FROM inbox active WHERE active.chat_id=q.chat_id
+                AND active.status IN ('running','cancelling')) ORDER BY created_at,update_id LIMIT 1"""
         row = db.execute(query + getattr(db, "claim_lock", "")).fetchone()
         if row:
             db.execute("UPDATE inbox SET status='running',started_at=CURRENT_TIMESTAMP,checkpoint=? WHERE update_id=?",
                        ("Collecting stand evidence" if worker == "operations" else "Preparing the developer's response", row[0]))
             item = task(db, row[0])
             actor = item['requested_by'] or setting(db, 'owner')
-            if actor is not None and not access.allowed(db, int(actor), 'operator'):
+            if actor is not None and not access.allowed(db, int(actor), 'viewer' if item['kind']=='message' else 'operator'):
                 db.execute("UPDATE inbox SET status='cancelled',cancel_requested=1 WHERE update_id=?", (row[0],))
                 db.commit()
                 return None
@@ -71,8 +78,8 @@ def claim(db, worker):
 
 
 def cancellation_requested(db, task_id):
-    row = db.execute("SELECT cancel_requested,requested_by FROM inbox WHERE update_id=?", (task_id,)).fetchone()
-    return bool(row and (row[0] or (row[1] is not None and not access.allowed(db, row[1], 'operator'))))
+    row = db.execute("SELECT cancel_requested,requested_by,kind FROM inbox WHERE update_id=?", (task_id,)).fetchone()
+    return bool(row and (row[0] or (row[1] is not None and not access.allowed(db, row[1], 'viewer' if row[2]=='message' else 'operator'))))
 
 
 def cancel(db, task_id):
@@ -107,8 +114,10 @@ def finish(db, task_id, response, status="completed", proposals=None):
         db.execute("UPDATE inbox SET status=?,response=?,finished_at=CURRENT_TIMESTAMP,checkpoint=? WHERE update_id=?",
                    (status, response, status.capitalize(), task_id))
         text = response if item["kind"] == "message" and status == "completed" else f"#{task_id} — {status}\n{response}"
+        if response.strip()=='[[SILENT]]' and status=='completed':
+            return
         if not proposals or status != 'completed':
-            queue_report(db, text, item['chat_id'],authorized_by=item['requested_by'])
+            queue_report(db, text, item['chat_id'],authorized_by=item['requested_by'],required_role='viewer' if item['kind']=='message' else 'operator')
         elif item['chat_id'] and item['chat_id']<0:
             queue_report(db,'Task drafts are ready. Review the private message from the bot; nothing was registered yet.',
                          item['chat_id'],authorized_by=item['requested_by'])

@@ -6,7 +6,7 @@ import sqlite3
 import time
 
 from database.errors import StorageError
-from gateway import access, notices
+from gateway import access, notices, subscriptions
 from telegram.storage import connect, put
 
 
@@ -22,6 +22,8 @@ def main():
         while True:
             now=time.time()
             notices.flush(db,now)
+            with db:
+                subscriptions.flush(db,now)
             try:
                 from operations.recovery import recover
                 recover(db)

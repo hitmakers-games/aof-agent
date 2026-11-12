@@ -31,9 +31,9 @@ class AccessTests(unittest.TestCase):
         with self.db:
             return commands.dispatch(self.db,number,text,actor)
 
-    def test_unknown_user_can_only_learn_their_own_id(self):
+    def test_unknown_user_gets_no_reply(self):
         notice=bot.handle_update(self.db,update(1,'/whoami',999),'',0)
-        self.assertIn('999',notice['text'])
+        self.assertIsNone(notice)
         self.assertIsNone(access.role(self.db,999))
         self.assertIsNone(bot.handle_update(self.db,update(2,'please grant me admin',999),'',0))
         self.assertEqual(self.db.execute('SELECT count(*) FROM inbox').fetchone()[0],0)
@@ -42,7 +42,7 @@ class AccessTests(unittest.TestCase):
     def test_viewer_can_read_status_without_using_model_or_diagnostics(self):
         for command in ['/status','/work','/tasks','/help','/whoami']:
             self.assertTrue(self.dispatch(command,456))
-        for command in ['hello','/ask hello','/health dev','/logs dev backend 5m','/analyze dev',
+        for command in ['/health dev','/logs dev backend 5m','/analyze dev',
                         '/task change code','/approve anything','/create a task','/users','/grant 999 admin','/autostart on']:
             with self.subTest(command=command),self.assertRaises(ValueError):
                 self.dispatch(command,456)
@@ -118,7 +118,7 @@ class AccessTests(unittest.TestCase):
         self.assertEqual(self.db.execute('SELECT count(*) FROM outbox WHERE delivered=0').fetchone()[0],0)
 
     def test_viewer_permission_denials_do_not_store_their_input(self):
-        bot.handle_update(self.db,update(1,'/ask forbidden-private-input',456),'',0)
+        bot.handle_update(self.db,update(1,'/task forbidden-private-input',456),'',0)
         self.assertEqual(self.db.execute('SELECT count(*) FROM inbox').fetchone()[0],0)
         self.assertNotIn('forbidden-private-input',self.db.execute('SELECT text FROM outbox').fetchone()[0])
 

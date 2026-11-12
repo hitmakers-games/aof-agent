@@ -37,32 +37,18 @@ class GroupTests(unittest.TestCase):
         self.assertIn('Earlier answer',row[1])
         self.assertIn('42',row[1])
 
-    def test_replies_to_other_senders_and_malformed_replies_are_ignored(self):
-        for reply in (None,[],{'from':[]},{'from':{'id':888,'username':'AofAgentBot','is_bot':True}},
-                      {'from':{'id':456}}, {'from':{'id':'777'}}):
+    def test_unmentioned_messages_reach_conversation_routing(self):
+        for reply in (None,[],{'from':[]}):
             self.message('hello',reply=reply)
-        self.assertEqual(self.db.execute('SELECT count(*) FROM inbox').fetchone()[0],0)
+        self.assertEqual(self.db.execute('SELECT count(*) FROM inbox').fetchone()[0],3)
 
-    def test_reply_permissions_and_private_commands_are_preserved(self):
-        reply={'from':{'id':777},'text':'Earlier answer'}
-        self.message('hello',actor=999,reply=reply)
-        self.message('hello',actor=456,reply=reply)
-        self.assertEqual(self.db.execute('SELECT count(*) FROM inbox').fetchone()[0],0)
-        self.message('/users',reply=reply)
-        self.assertTrue(any('private chat' in row[0] for row in self.db.execute('SELECT text FROM outbox')))
-
-    def test_only_exact_mentions_and_directed_commands_receive_replies(self):
-        for text in ('Hello','/status','@AnotherBot hi','@AofAgentBot_other hi'):
-            self.message(text)
-        self.assertEqual(self.db.execute('SELECT count(*) FROM outbox').fetchone()[0],0)
-        self.message('/status@AofAgentBot')
-        self.assertEqual(self.db.execute('SELECT chat_id,authorized_by FROM outbox').fetchone(),(-900,123))
-
-    def test_unknown_people_and_viewers_cannot_run_ai(self):
-        self.message('@AofAgentBot /status')
-        self.message('@AofAgentBot hello',999)
-        self.message('@AofAgentBot hello',456)
-        self.assertEqual(self.db.execute('SELECT count(*) FROM inbox').fetchone()[0],0)
+    def test_unknown_silent_viewer_can_chat_admin_commands_work_in_group(self):
+        self.message('/status')
+        self.message('hello',actor=999)
+        self.message('status please',actor=456)
+        self.assertEqual(self.db.execute('SELECT requested_by FROM inbox').fetchall(),[(456,)])
+        self.message('/users')
+        self.assertTrue(any('123' in row[0] for row in self.db.execute('SELECT text FROM outbox')))
 
     def test_private_chat_does_not_require_a_mention(self):
         self.message('hello',chat=123)
@@ -85,16 +71,11 @@ class GroupTests(unittest.TestCase):
         while deliver_one(self.db,api):pass
         self.assertEqual(api.call.call_args.kwargs['chat_id'],-900)
 
-    def test_private_reports_admin_commands_and_assignments_stay_private(self):
-        self.message('Secret',chat=123)
-        self.message('@AofAgentBot /report 1')
-        self.message('@AofAgentBot /users')
+    def test_admin_chooses_to_read_private_assignment_in_group(self):
         with self.db:item=work.create(self.db,123,'Confidential assignment')
-        self.message('@AofAgentBot /work')
-        self.message('@AofAgentBot /status '+item['id'])
-        texts=[row[0] for row in self.db.execute('SELECT text FROM outbox WHERE chat_id=-900')]
-        self.assertFalse(any('Confidential' in text for text in texts))
-        self.assertTrue(any('private chat' in text for text in texts))
+        self.message('/status '+item['id'])
+        self.assertIn('Confidential assignment',self.db.execute('SELECT text FROM outbox').fetchone()[0])
+
 
 
 if __name__=='__main__':unittest.main()

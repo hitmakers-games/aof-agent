@@ -99,7 +99,7 @@ class ChatTests(unittest.TestCase):
         with patch('developer.session.workspace',return_value=Path(self.temp.name)),patch.object(chat, "run_codex", return_value={"response":"Hello"}) as run:
             self.assertEqual(chat.model_reply("test",actor=123,chat_id=123), "Hello")
         args=run.call_args.args[0]
-        self.assertNotIn("features.shell_tool=false",args)
+        self.assertIn("features.shell_tool=false",args)
         self.assertNotIn('--sandbox',args)
         self.assertIn('default_permissions="developer"',args)
         self.assertIn('mcp_servers.developer.required=true',args)

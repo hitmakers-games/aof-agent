@@ -45,7 +45,7 @@ def refresh_typing(db, api, next_refresh=0, now=None):
     for (actor,) in people:
         if actor is None:
             continue
-        if int(actor)>0 and not access.allowed(db,int(actor),'operator'):
+        if int(actor)>0 and not access.allowed(db,int(actor),'viewer'):
             continue
         if int(actor)<0:
             from telegram.groups import enabled

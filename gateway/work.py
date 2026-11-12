@@ -25,7 +25,7 @@ def get(db, reference, lock=False):
 
 def visible(db, actor, item):
     return bool(item and access.allowed(db, actor) and
-                (item['visibility'] == 'shared' or item['requester_id'] == actor))
+                (item['visibility'] == 'shared' or item['requester_id'] == actor or access.allowed(db,actor,'admin')))
 
 
 def require_item(db, actor, reference, minimum='viewer', lock=False):
@@ -37,7 +37,7 @@ def require_item(db, actor, reference, minimum='viewer', lock=False):
 
 
 def create(db, actor, title, description='', source='telegram', mode='ask', external_id=None,
-           issue_key=None, origin_action=None, notify=True, shared=False, repositories=None):
+           issue_key=None, origin_action=None, notify=False, shared=False, repositories=None):
     if actor is not None:
         access.require(db, actor, 'operator')
     if not title.strip() or len(title) > 500 or len(description) > 32000:
@@ -70,8 +70,8 @@ def approve(db, actor, reference, expected_revision=None):
     item = require_item(db, actor, reference, 'operator', lock=True)
     if expected_revision and item['revision'] != expected_revision:
         return 'changed'
-    if setting(db, 'coding_enabled', '0') == '1' and not json.loads(item['repositories']):
-        raise ValueError('Select repositories first: /repo ' + item['id'] + ' aof-agent')
+    if not access.allowed(db,actor,'admin') and set(json.loads(item['repositories'])) & {'aof-agent','aof-infra'}:
+        raise ValueError('Only administrators can change the agent or its infrastructure.')
     if item['state'] in TERMINAL or item['state'] == 'running':
         return item['state']
     if item['state'] == 'cancelling':
@@ -113,10 +113,12 @@ def describe(db, actor, reference):
 
 
 def listing(db, actor, shared_only=False):
-    rows = db.execute('''SELECT id,issue_key,state,visibility,requester_id FROM work_items
+    rows = db.execute('''SELECT id,issue_key,state,visibility,requester_id,title,checkpoint FROM work_items
                          ORDER BY created_at DESC LIMIT 100''').fetchall()
-    return '\n'.join(f'{key or uid}: {state}' for uid, key, state, visibility, owner in rows
-                     if visibility == 'shared' or (not shared_only and owner == actor))[:3500] or 'No assignments yet.'
+    return '\n'.join(f'{key or uid}: {state}'+(' — '+title[:90] if access.allowed(db,actor,'operator') else '')
+                     +(f' ({checkpoint})' if state=='running' and checkpoint and access.allowed(db,actor,'operator') else '')
+                     for uid, key, state, visibility, owner,title,checkpoint in rows
+                     if visibility == 'shared' or (not shared_only and (owner == actor or access.allowed(db,actor,'admin'))))[:3500] or 'No assignments yet.'
 
 
 def amend(db, actor, reference, description):

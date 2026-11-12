@@ -8,34 +8,21 @@ from telegram.storage import setting, put
 STANDS = {'dev': 'aof-dev', 'feature': 'aof-feature', 'release': 'aof-release'}
 COMPONENTS = {'backend': 'aof-back', 'frontend': 'frontend-gateway'}
 VIEWER = {'/start', '/help', '/whoami', '/status', '/tasks', '/work', '/ops'}
-ADMIN = {'/grant', '/revoke', '/users', '/autostart', '/pause', '/resume', '/coding'}
+ADMIN = {'/grant', '/revoke', '/users', '/autostart', '/pause', '/resume', '/coding', '/model', '/models', '/reasoning', '/mode', '/fast', '/smart', '/ops'}
 
 
 def minimum(text):
     head = text.strip().split(maxsplit=1)[0].split('@', 1)[0].lower() if text.strip() else ''
-    return 'viewer' if head in VIEWER else 'admin' if head in ADMIN else 'operator'
+    return 'admin' if head in ADMIN else 'viewer' if head in VIEWER or not head.startswith('/') or head=='/ask' else 'operator'
 
 
 def help_text(db, actor):
-    text = 'Developer gateway\n/whoami — your numeric ID and role\n/status [task] — availability/status\n/work or /tasks — assignments'
-    if access.allowed(db, actor, 'operator'):
-        text += '\n/models; /model name [reasoning]; /reasoning level\n/mode fast|balanced|smart — shared developer setting\n/fast message; /smart message — one request'
-        text += '''\nPlain text or /ask — private conversation
-/task description — shared assignment, awaiting approval by default
-/task-run description — explicitly register and queue an assignment
-/approve task — queue the current task scope
-/amend task description — change scope; requires fresh approval
-/hold task — hold a task; /cancel task — cancel
-/report id — your saved result
-/bug description — private bug triage
-/health dev; /changes dev — read-only stand diagnostics
-/logs dev backend 5m; /analyze dev backend 5m
-/watch on|off — shared assignment summaries
-/draft id — inspect your private task drafts'''
-        text += '\n/task repo[,repo] description — coding assignment\n/repo task repo[,repo] — select repositories; requires new approval\n/result task — result and commit links\n/retry task — retry interrupted/failed work after fresh approval\n/revise task request — follow up on the same task branch after approval'
-    if access.allowed(db, actor, 'admin'):
-        text += '\n/grant id viewer|operator|admin\n/revoke id; /users\n/autostart on|off — queue new /task requests automatically\n/pause; /resume — pause/resume new coding starts\n/coding on|off — enable/disable new coding claims'
-    return text + '\nJira and coding availability are shown in /status. Approval never grants deployment or shared-database access.'
+    text = 'Talk to me normally, in English or Russian. In groups I speak when a response from me is expected.\n/status — availability\n/tasks — work queue\n/status task — progress\n/whoami — your ID and role'
+    if access.allowed(db,actor,'operator'):
+        text += '\nAsk me to start work, show results, stop a task, or notify you when it finishes.\n/watch on|off — opt in/out of task reports\n/result task; /cancel task; /retry task'
+    if access.allowed(db,actor,'admin'):
+        text += '\n/mode fast|balanced|smart; /model name [reasoning]\n/grant id viewer|operator|admin; /revoke id; /users\n/pause; /resume — new background work\n/ops — self-deployment status'
+    return text
 
 
 def identifier(value):
@@ -48,7 +35,7 @@ def identifier(value):
 def own_job(db, actor, value):
     item = tasks.task(db, identifier(value))
     owner = (item['requested_by'] or item['chat_id'] or setting(db, 'owner')) if item else None
-    if not item or str(owner) != str(actor):
+    if not item or (str(owner) != str(actor) and not access.allowed(db,actor,'admin')):
         raise ValueError('Task not found or access denied.')
     return item
 
@@ -130,8 +117,13 @@ def dispatch(db, update_id, text, actor=None, context=None, chat_id=None):
     if head == '/watch':
         if argument not in {'on','off'}:
             raise ValueError('Usage: /watch on|off')
-        put(db,f'watch:{actor}',argument)
-        return f'Shared task summaries: {argument}.'
+        from gateway.subscriptions import watch
+        if argument=='off':
+            db.execute("UPDATE settings SET value=replace(value, '\"enabled\": true', '\"enabled\": false') WHERE key LIKE ?",
+                (f'subscription:{actor}:%',))
+        put(db,f'watch:{actor}','off')
+        watch(db,actor,chat_id or actor,'all' if access.allowed(db,actor,'admin') else 'mine',argument=='on')
+        return f'Task reports: {argument}.'
     if head in {'/task','/task-run'}:
         from coding.config import BASES, repositories
         first = argument.split(maxsplit=1)

@@ -16,7 +16,7 @@ def claim(db):
             return None
         row = db.execute("""SELECT id FROM work_items WHERE state='queued'
             AND approved_revision=revision AND held=0 AND cancel_requested=0
-            AND repositories<>'[]' ORDER BY created_at LIMIT 1""" + getattr(db, 'claim_lock', '')).fetchone()
+            ORDER BY created_at LIMIT 1""" + getattr(db, 'claim_lock', '')).fetchone()
         if not row:
             return None
         item = work.get(db, row[0])
@@ -31,7 +31,6 @@ def claim(db):
         item.update(attempt=attempt, run_id=run_id)
         from gateway.models import for_request
         item['model_options']=for_request(db,item['id'],item['requester_id'])
-        queue_report(db, f"Started {item['id']}: preparing {', '.join(json.loads(item['repositories']))}.", item['requester_id'])
         return item
 
 
@@ -62,8 +61,7 @@ def finish(db, item, state, result, links=()):
                    (state, result, time.time(), item['run_id']))
         db.execute('UPDATE work_items SET state=?,result=?,pull_requests=?,checkpoint=?,updated_at=? WHERE id=?',
                    (state, result, json.dumps(links), state, time.time(), item['id']))
-        queue_report(db, f"{item['id']} — {state}\n{result}" + ''.join('\n' + link for link in links),
-                     item['requester_id'], event_key='run:' + item['run_id'])
+        add(db,item['id'],'update')
 
 
 def recover(db):

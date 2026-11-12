@@ -69,7 +69,7 @@ def command(db, actor, chat_id, head, argument):
     if head == '/models':
         return '\n'.join(item['model'] + ': ' + ', '.join(item['efforts']) for item in catalog())
     if argument:
-        access.require(db, actor, 'operator')
+        access.require(db, actor, 'admin')
         if head == '/mode':
             if argument not in PRESETS:
                 raise ValueError('Use /mode fast|balanced|smart.')
