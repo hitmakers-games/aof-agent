@@ -40,17 +40,23 @@ class Kube:
             if job.get('status', {}).get('succeeded'):
                 return
             if job.get('status', {}).get('failed'):
-                raise ValueError('Build failed. Inspect the build job '+name+'.')
+                raise ValueError('Job failed. Inspect '+name+'.')
             time.sleep(3)
-        raise ValueError('Build timed out: '+name)
+        raise ValueError('Job timed out: '+name)
 
-    def wait_deployment(self, name, timeout=240):
+    def wait_deployment(self, name, timeout=240, stable_seconds=0):
         deadline = time.monotonic()+timeout
+        ready_since = None
         while time.monotonic()<deadline:
             value = self.get('deployments', name)
             status, count = value.get('status', {}), value['spec'].get('replicas', 1)
             if (status.get('observedGeneration', 0)>=value['metadata']['generation']
                     and status.get('updatedReplicas', 0)==count and status.get('readyReplicas', 0)==count):
-                return
+                if ready_since is None:
+                    ready_since = time.monotonic()
+                if time.monotonic()-ready_since >= stable_seconds:
+                    return
+            else:
+                ready_since = None
             time.sleep(3)
         raise ValueError('Rollout timed out: '+name)

@@ -137,9 +137,9 @@ def main():
             with (options.state_dir / "telegram.lock").open("a") as lock:
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 serve(options.state_dir, options.secret_dir)
-    except (OSError, ValueError, sqlite3.Error, StorageError, TelegramError):
+    except (OSError, ValueError, sqlite3.Error, StorageError, TelegramError) as error:
         # Never include exception URLs, tokens, or message text in pod logs.
-        print("Telegram service failed; check configuration and bot availability", file=sys.stderr)
+        print("Telegram service failed ("+type(error).__name__+"); check configuration and bot availability", file=sys.stderr)
         return 1
     return 0
 

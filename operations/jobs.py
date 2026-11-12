@@ -74,3 +74,22 @@ def build(request, image):
                       {'name': 'registry', 'secret': {'secretName': 'selectel-registry',
                           'items': [{'key': '.dockerconfigjson', 'path': 'config.json'}]}}]
     return job
+
+
+def preflight(request, image):
+    job = base(request['id']+'-preflight', controller=False)
+    job['spec']['activeDeadlineSeconds'] = 120
+    pod = job['spec']['template']['spec']
+    job['spec']['template']['metadata']['labels']['app.kubernetes.io/part-of'] = 'aof-agent-db-client'
+    pod['securityContext'].update(runAsNonRoot=True,runAsUser=10001,runAsGroup=10001)
+    pod['containers'] = [{'name':'preflight','image':image,
+        'command':['python3','-m','gateway.preflight'],
+        'securityContext':{'allowPrivilegeEscalation':False,'readOnlyRootFilesystem':True,'capabilities':{'drop':['ALL']}},
+        'env':[{'name':'AOF_DATABASE_DSN_FILE','value':'/run/secrets/database/uri'},
+               {'name':'AOF_DATABASE_CA_FILE','value':'/run/secrets/database/ca.crt'}],
+        'resources':{'requests':{'cpu':'25m','memory':'32Mi'},'limits':{'cpu':'100m','memory':'128Mi'}},
+        'volumeMounts':[{'name':'database','mountPath':'/run/secrets/database','readOnly':True}]}]
+    pod['volumes'] = [{'name':'database','projected':{'defaultMode':0o440,'sources':[
+        {'secret':{'name':'aof-agent-db-app','items':[{'key':'uri','path':'uri'}]}},
+        {'secret':{'name':'aof-agent-db-ca','items':[{'key':'ca.crt','path':'ca.crt'}]}}]}}]
+    return job

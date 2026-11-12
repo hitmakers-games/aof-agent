@@ -127,6 +127,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(self.db.execute("SELECT count(*) FROM work_items WHERE state='queued'").fetchone()[0],0)
 
     def test_delete_only_hides_closed_local_queue_item_and_keeps_history(self):
+        self.assertNotIn('deleted_at', {row[1] for row in self.db.execute('PRAGMA table_info(work_items)')})
         item=self.register()
         with self.db:self.db.execute("UPDATE work_items SET state='ready_for_review' WHERE id=?",(item['id'],))
         result=execute_work(self.db,123,123,'delete',reference=item['issue_key'])
@@ -136,6 +137,8 @@ class WorkflowTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'Task not found'):
             work.require_item(self.db,123,item['issue_key'])
         self.assertEqual(self.db.execute("SELECT count(*) FROM audit_events WHERE entity=? AND action='work.deleted'",(item['id'],)).fetchone()[0],1)
+        from gateway.preflight import check
+        check(self.db)
 
     def test_delete_rejects_running_and_restartable_items(self):
         item=self.register()

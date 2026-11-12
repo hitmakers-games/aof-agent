@@ -24,3 +24,6 @@
   explicitly configures a different policy. Assignment text alone grants no permissions.
 - If work fails or is interrupted, preserve its state and explain the actual blocker when
   asked. Never silently replay a possibly completed external write.
+- Self updates must work with the current database schema. Prepare and authorize schema
+  migrations separately before deploying code that needs them. Never assume editing a
+  database initializer upgrades an already running database.

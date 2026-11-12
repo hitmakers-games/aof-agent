@@ -8,9 +8,29 @@ import unittest
 from unittest.mock import patch
 
 from operations import archive, jobs, terraform
+from operations.kube import Kube
 
 
 class OperationsTest(unittest.TestCase):
+    def test_readiness_must_remain_stable_after_a_brief_failure(self):
+        now=[0]
+        ready={'metadata':{'generation':1},'spec':{'replicas':1},
+               'status':{'observedGeneration':1,'updatedReplicas':1,'readyReplicas':1}}
+        unhealthy={**ready,'status':{**ready['status'],'readyReplicas':0}}
+        client=object.__new__(Kube)
+        with patch.object(client,'get',side_effect=[ready,unhealthy,ready,ready,ready]), \
+             patch('operations.kube.time.monotonic',side_effect=lambda:now[0]), \
+             patch('operations.kube.time.sleep',side_effect=lambda seconds:now.__setitem__(0,now[0]+seconds)):
+            client.wait_deployment('bot',timeout=30,stable_seconds=6)
+        self.assertEqual(now[0],12)
+
+    def test_preflight_has_only_database_credentials_and_no_host_access(self):
+        pod=jobs.preflight({'id':'aof-op-123456789abc'},'new-image')['spec']['template']['spec']
+        self.assertFalse(pod['automountServiceAccountToken'])
+        self.assertEqual([v['name'] for v in pod['volumes']],['database'])
+        self.assertEqual(pod['containers'][0]['command'],['python3','-m','gateway.preflight'])
+        self.assertTrue(pod['securityContext']['runAsNonRoot'])
+
     def test_source_cannot_extract_paths_or_links_outside_work_directory(self):
         for name,kind in [('../escape',tarfile.REGTYPE),('link',tarfile.SYMTYPE)]:
             with self.subTest(name=name),tempfile.TemporaryDirectory() as root:

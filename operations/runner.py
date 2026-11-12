@@ -102,6 +102,9 @@ def execute(db, kube, request):
     previous = request['runtime_image'].split('@')[1]
     if request['action']=='deploy':
         digest = build(db,kube,request)
+        save(db,request,'checking-database',digest=digest)
+        kube.create(jobs.preflight(request,jobs.REPOSITORY+'@'+digest))
+        kube.wait_job(request['id']+'-preflight',timeout=120)
         save(db,request,'planning-deployment',digest=digest,commit=request['aof-agent'])
         plan = terraform.plan(root,env,digest,deploy=True)
     else:
@@ -112,13 +115,14 @@ def execute(db, kube, request):
     save(db,request,'applying')
     try:
         terraform.apply(root,env,plan['plan_sha256'])
-        kube.wait_deployment('aof-agent-telegram')
+        kube.wait_deployment('aof-agent-telegram',stable_seconds=30)
+        kube.wait_deployment('aof-agent-coding-executor')
     except Exception:
         if request['action']=='deploy':
             save(db,request,'rolling-back')
             rollback = terraform.plan(root,env,previous,deploy=True)
             terraform.apply(root,env,rollback['plan_sha256'])
-            kube.wait_deployment('aof-agent-telegram')
+            kube.wait_deployment('aof-agent-telegram',stable_seconds=30)
         raise
     save(db,request,'completed')
     return 'Self-deployment completed.' if request['action']=='deploy' else 'Terraform apply completed.'

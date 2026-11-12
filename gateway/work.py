@@ -6,7 +6,7 @@ import time
 import uuid
 
 from gateway import access
-from telegram.storage import setting
+from telegram.storage import setting, put
 
 
 TERMINAL = {'cancelled', 'failed', 'interrupted', 'ready_for_review'}
@@ -30,7 +30,12 @@ def get(db, reference, lock=False):
     suffix = getattr(db, 'row_lock', '') if lock else ''
     cursor = db.execute('SELECT * FROM work_items WHERE id=? OR issue_key=?' + suffix, (reference, reference))
     row = cursor.fetchone()
-    return dict(zip([c[0] for c in cursor.description], row)) if row else None
+    if not row:
+        return None
+    item = dict(zip([c[0] for c in cursor.description], row))
+    deleted = setting(db, 'work-deleted:'+item['id'])
+    item['deleted_at'] = float(deleted) if deleted else None
+    return item
 
 
 def visible(db, actor, item):
@@ -132,7 +137,8 @@ def describe(db, actor, reference):
 
 def listing(db, actor, shared_only=False):
     rows = db.execute('''SELECT id,issue_key,state,visibility,requester_id,title,checkpoint FROM work_items
-                         WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT 100''').fetchall()
+                         WHERE NOT EXISTS (SELECT 1 FROM settings WHERE key='work-deleted:' || work_items.id)
+                         ORDER BY created_at DESC LIMIT 100''').fetchall()
     return '\n'.join(f'{key or uid}: {state}'+(' — '+title[:90] if access.allowed(db,actor,'operator') else '')
                      +(f' ({checkpoint})' if state=='running' and checkpoint and access.allowed(db,actor,'operator') else '')
                      for uid, key, state, visibility, owner,title,checkpoint in rows
@@ -143,7 +149,7 @@ def delete(db, actor, reference):
     item = require_item(db, actor, reference, 'operator', lock=True)
     if item['state'] not in TERMINAL:
         raise ValueError('Only closed tasks can be deleted. Cancel or finish the task first.')
-    db.execute('UPDATE work_items SET deleted_at=? WHERE id=? AND deleted_at IS NULL', (time.time(), item['id']))
+    put(db, 'work-deleted:'+item['id'], time.time())
     access.audit(db, actor, 'work.deleted', item['id'], {'source': item['source']})
     return {'task': item['issue_key'], 'state': 'deleted'}
 
