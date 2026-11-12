@@ -23,7 +23,7 @@ def schema(properties,required=()):
 STRING={'type':'string'}
 TOOLS=[
     {'name':'settings','description':'Admin only: change the shared model/profile or grant/revoke Telegram user roles. Read or list access with action=users.','inputSchema':schema({'action':{'type':'string','enum':['model','mode','reasoning','grant','revoke','users']},'value':STRING},['action'])},
-    {'name':'work','description':'The shared work queue. Start real development/research in the background so chat stays responsive. Explicit user requests authorize start; do not require a slash command. Reuse reference for an existing Jira/Telegram task. Only set notify when asked for reports. Watch/unwatch subscribes this chat to a task, mine, all (admin), or jira; minutes=0 means changes only. Status includes the saved result.','inputSchema':schema({'action':{'type':'string','enum':['start','list','status','cancel','watch','unwatch']},'reference':STRING,'title':STRING,'description':STRING,'repositories':{'type':'array','items':STRING},'notify':{'type':'boolean'},'topic':{'type':'string','enum':['mine','all','jira']},'minutes':{'type':'integer','minimum':0,'maximum':1440}},['action'])},
+    {'name':'work','description':'The shared work queue. Start real development/research in the background so chat stays responsive. Explicit user requests authorize start; do not require a slash command. Reuse reference for an existing Jira/Telegram task. Only set notify when asked for reports. Watch/unwatch subscribes this chat to a task, mine, all (admin), or jira; minutes=0 means changes only. Status includes the saved result. Background tasks use progress with a short description at meaningful stages.','inputSchema':schema({'action':{'type':'string','enum':['start','list','status','cancel','watch','unwatch','progress']},'reference':STRING,'title':STRING,'description':STRING,'repositories':{'type':'array','items':STRING},'notify':{'type':'boolean'},'topic':{'type':'string','enum':['mine','all','jira']},'minutes':{'type':'integer','minimum':0,'maximum':1440},'events':{'type':'string','enum':['changes','finished']}},['action'])},
     {'name':'memory','description':'Read shared versioned project memory or immediately remember a confirmed nonsecret fact in aof-agent master. Admins may write; never save secrets, personal information, or raw chat transcripts. Rules/design changes are background development tasks.','inputSchema':schema({'action':{'type':'string','enum':['read','remember']},'text':STRING},['action'])},
     {'name':'health','description':'Safe service availability, without logs or sensitive configuration. Available to viewers.','inputSchema':schema({})},
     {'name':'capabilities','description':'Read actual developer identity and connected capabilities. Use before claiming missing access.','inputSchema':schema({})},
@@ -55,6 +55,13 @@ class Developer:
                     return command(self.db,self.actor,self.chat,'/'+action,args.get('value',''))
                 return access.command(self.db,self.actor,'/'+action,args.get('value',''))
         if name=='work':
+            if args['action']=='progress':
+                access.require(self.db,self.actor,'operator')
+                if not self.work_id:raise ValueError('Progress belongs to a running background task.')
+                with self.db:
+                    self.db.execute("UPDATE work_items SET checkpoint=?,updated_at=? WHERE id=? AND state='running' AND approved_by=?",
+                        (args.get('description','')[:500],time.time(),self.work_id,self.actor))
+                return {'status':'progress saved'}
             from developer.work_tools import execute
             with self.db:
                 if args['action']=='start':
@@ -75,6 +82,8 @@ class Developer:
                     'active_tasks':self.db.execute("SELECT count(*) FROM work_items WHERE state IN ('queued','running','cancelling')").fetchone()[0]}
             return result
         if name=='capabilities':
+            if not access.allowed(self.db,self.actor,'operator'):
+                return {'role':'viewer','tools':['health','work.list','work.status']}
             return {'role':access.role(self.db,self.actor),'workspace':str(self.root),
                     'work':'shared queue; background tasks; opt-in reports',
                     'shell':'workspace edits and commands enabled','git':'all corporate repositories; working branch commits and pushes',

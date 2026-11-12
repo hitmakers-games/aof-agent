@@ -4,7 +4,7 @@ import time
 
 from developer.jira import Jira
 from gateway import work
-from telegram.storage import connect, put
+from telegram.storage import connect, put, setting
 
 
 def text(value):
@@ -23,21 +23,28 @@ def poll(db,jira):
         if not page.get('nextPageToken'):break
         query['nextPageToken']=page['nextPageToken']
     with db:
+        assigned={issue['key'] for issue in issues}
+        for (uid,key) in db.execute("SELECT id,issue_key FROM work_items WHERE source='jira' AND assigned=1").fetchall():
+            if key not in assigned:work.withdraw(db,uid)
         for issue in issues:
             if not issue['key'].startswith(jira.config['projectKey']+'-'):continue
             fields=issue['fields']
             title=fields['summary'][:500]
             description=text(fields.get('description'))[:32000]
+            source_revision=work.revision(title,description)
+            previous=setting(db,'jira-source:'+issue['key'])
             existing=work.get(db,issue['key'],lock=True)
             if existing is None:
                 work.create(db,None,title,description,source='jira',external_id=issue['id'],
                     issue_key=issue['key'],shared=True,notify=True)
-            elif existing['title']!=title or existing['description']!=description:
+            elif previous is not None and previous!=source_revision:
                 revision=work.revision(title,description,repositories=json.loads(existing['repositories']))
                 db.execute("""UPDATE work_items SET title=?,description=?,revision=?,approved_revision=NULL,
                     approved_by=NULL,cancel_requested=?,state=?,updated_at=? WHERE id=?""",
                     (title,description,revision,int(existing['state']=='running'),
                      'cancelling' if existing['state']=='running' else 'awaiting_approval',time.time(),existing['id']))
+            put(db,'jira-source:'+issue['key'],source_revision)
+            db.execute('UPDATE work_items SET assigned=1 WHERE issue_key=?',(issue['key'],))
         put(db,'jira_state','online; assignments await a Telegram go-ahead')
 
 

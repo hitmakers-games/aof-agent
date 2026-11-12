@@ -7,7 +7,7 @@ from telegram.storage import put
 
 
 def execute(db, actor, chat, action, reference=None, title=None, description='', repositories=None,
-            notify=False, topic='mine', minutes=0):
+            notify=False, topic='mine', minutes=0, events='changes'):
     access.require(db,actor,'viewer')
     if action=='list':
         return {'queue':work.listing(db,actor)}
@@ -19,7 +19,7 @@ def execute(db, actor, chat, action, reference=None, title=None, description='',
         return result
     access.require(db,actor,'operator')
     if action in {'watch','unwatch'}:
-        return subscriptions.watch(db,actor,chat,reference or topic,action=='watch',minutes)
+        return subscriptions.watch(db,actor,chat,reference or topic,action=='watch',minutes,events)
     if action=='start':
         if repositories and set(repositories)&{'aof-agent','aof-infra'}:
             access.require(db,actor,'admin')
@@ -30,10 +30,11 @@ def execute(db, actor, chat, action, reference=None, title=None, description='',
         work.approve(db,actor,item['id'])
         models.snapshot(db,item['id'],chat)
         put(db,'work-chat:'+item['id'],chat)
-        if notify:subscriptions.watch(db,actor,chat,item['id'])
+        if notify:subscriptions.watch(db,actor,chat,item['id'],events='finished')
         return {'task':item['issue_key'],'state':work.get(db,item['id'])['state']}
     if action=='cancel':
         item=work.require_item(db,actor,reference,'operator',lock=True)
+        if item['state'] in work.TERMINAL:return {'task':item['issue_key'],'state':item['state']}
         work.hold(db,actor,item['id'])
         db.execute('UPDATE work_items SET state=?,held=0,updated_at=? WHERE id=?',
             ('cancelling' if item['state']=='running' else 'cancelled',time.time(),item['id']))

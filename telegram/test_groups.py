@@ -40,7 +40,8 @@ class GroupTests(unittest.TestCase):
     def test_unmentioned_messages_reach_conversation_routing(self):
         for reply in (None,[],{'from':[]}):
             self.message('hello',reply=reply)
-        self.assertEqual(self.db.execute('SELECT count(*) FROM inbox').fetchone()[0],3)
+        self.assertEqual(self.db.execute('SELECT count(*) FROM inbox').fetchone()[0],1)
+        self.assertEqual(self.db.execute('SELECT text FROM inbox').fetchone()[0],'hello\nhello\nhello')
 
     def test_unknown_silent_viewer_can_chat_admin_commands_work_in_group(self):
         self.message('/status')

@@ -6,17 +6,18 @@ from gateway import access, work
 from telegram.storage import put, queue_report, setting
 
 
-def watch(db, actor, chat, topic, enabled=True, minutes=0):
+def watch(db, actor, chat, topic, enabled=True, minutes=0, events='changes'):
     access.require(db, actor, 'operator')
     if topic not in {'all','mine','jira'}:
         topic = work.require_item(db,actor,topic,'operator')['id']
     if topic=='all':
         access.require(db,actor,'admin')
+    if events not in {'changes','finished'}:raise ValueError('Report changes or completion.')
     if type(minutes) is not int or minutes<0 or (minutes and not 5<=minutes<=1440):
         raise ValueError('Reports can repeat every 5 to 1440 minutes, or on changes only.')
     key=f'subscription:{actor}:{chat}:{topic}'
     put(db,key,json.dumps({'actor':actor,'chat':chat,'topic':topic,'enabled':bool(enabled),
-        'minutes':minutes,'next':time.time()+max(30,minutes*60),'previous':None}))
+        'minutes':minutes,'events':events,'next':time.time()+max(30,minutes*60),'previous':None}))
     return {'topic':topic,'enabled':bool(enabled),'minutes':minutes}
 
 
@@ -36,9 +37,11 @@ def flush(db, now=None):
             if topic=='mine' and item['requester_id']!=entry['actor']:continue
             if topic=='jira' and item['source']!='jira':continue
             if topic not in {'all','mine','jira'} and uid!=topic:continue
+            if entry.get('events')=='finished' and item['state'] not in work.TERMINAL:continue
             items.append((item['issue_key'],item['state'],item['checkpoint']))
         rendered=json.dumps(items,ensure_ascii=False)
-        if items and (rendered!=entry['previous'] or entry['minutes']):
+        active=any(state not in work.TERMINAL for _,state,_ in items)
+        if items and (rendered!=entry['previous'] or (entry['minutes'] and active)):
             lines=destinations.setdefault((entry['actor'],entry['chat']),set())
             lines.update(f'{key}: {state}'+(f' — {progress}' if progress and progress!=state else '') for key,state,progress in items[:15])
         entry.update(previous=rendered,next=now+max(30,entry['minutes']*60))

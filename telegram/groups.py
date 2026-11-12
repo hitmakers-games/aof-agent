@@ -21,10 +21,13 @@ def handle(db, update_id, message):
         return True
     if chat.get('type') not in {'group','supergroup'}:
         return False
-    actor, chat_id, text = sender.get('id'), chat.get('id'), message.get('text','')
+    actor, chat_id, text = sender.get('id'), chat.get('id'), message.get('text') or message.get('caption','')
     username = setting(db,'bot_username')
     if (not username or type(actor) is not int or type(chat_id) is not int or chat_id >= 0
-            or sender.get('is_bot') or not isinstance(text,str) or not access.allowed(db,actor)):
+            or sender.get('is_bot') or not isinstance(text,str) or not text.strip() or not access.allowed(db,actor)):
+        return True
+    command_target=re.match(r'^/[a-z_]+@(\w+)',text,re.IGNORECASE)
+    if command_target and command_target[1].lower()!=username.lower():
         return True
     mention = r'(?<![\w])@' + re.escape(username) + r'(?![\w])'
     addressed_command=re.match(r'^/[a-z_]+@'+re.escape(username)+r'(?![\w])',text,re.IGNORECASE)
@@ -37,8 +40,6 @@ def handle(db, update_id, message):
                     and str(reply_sender['id'])==str(bot_id))
     directed = bool(re.search(mention,text,re.IGNORECASE) or addressed_command or replies_to_bot)
     if not enabled(db,chat_id):
-        if not access.allowed(db,actor,'admin'):
-            return True
         put(db,f'group:{chat_id}:enabled',1)
         access.audit(db,actor,'group.enabled',chat_id)
     text=re.sub(r'@'+re.escape(username)+r'(?![\w])','',text,flags=re.IGNORECASE).strip()
@@ -48,6 +49,13 @@ def handle(db, update_id, message):
     from telegram.updates import action
     def command():
         access.require(db,actor,minimum(text))
+        # Keep bursts from one person in one pending turn; history retains every message.
+        if not head.startswith('/'):
+            pending=db.execute("SELECT update_id,text FROM inbox WHERE chat_id=? AND requested_by=? AND kind='message' AND status='queued' ORDER BY update_id DESC LIMIT 1"+getattr(db,'claim_lock',''),
+                (chat_id,actor)).fetchone()
+            if pending:
+                db.execute('UPDATE inbox SET text=? WHERE update_id=?',((pending[1]+'\n'+text)[-32000:],pending[0]))
+                return None
         if head in PRIVATE and not access.allowed(db,actor,'admin'):
             return 'Use this command in the private chat with @'+username+'.'
         if head in {'/tasks','/work'}:
