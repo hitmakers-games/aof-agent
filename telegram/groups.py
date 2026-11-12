@@ -1,4 +1,5 @@
-"""Mention-only group conversations, isolated from every private conversation."""
+"""Explicit group conversations, isolated from every private conversation."""
+import json
 import re
 
 from gateway import access, work
@@ -27,7 +28,14 @@ def handle(db, update_id, message):
         return True
     mention = r'(?<![\w])@' + re.escape(username) + r'(?![\w])'
     addressed_command=re.match(r'^/[a-z_]+@'+re.escape(username)+r'(?![\w])',text,re.IGNORECASE)
-    if not re.search(mention,text,re.IGNORECASE) and not addressed_command:
+    reply=message.get('reply_to_message')
+    reply=reply if isinstance(reply,dict) else {}
+    reply_sender=reply.get('from')
+    reply_sender=reply_sender if isinstance(reply_sender,dict) else {}
+    bot_id=setting(db,'bot_id')
+    replies_to_bot=(type(reply_sender.get('id')) is int and bot_id is not None
+                    and str(reply_sender['id'])==str(bot_id))
+    if not re.search(mention,text,re.IGNORECASE) and not addressed_command and not replies_to_bot:
         return True
     if not enabled(db,chat_id):
         if not access.allowed(db,actor,'admin'):
@@ -52,7 +60,12 @@ def handle(db, update_id, message):
             item=work.require_item(db,actor,reference)
             if item['visibility']!='shared':
                 raise ValueError('Private assignments are available only in the private chat.')
-        result=dispatch(db,update_id,text or '/help',actor,chat_id=chat_id)
+        quoted=reply.get('text') or reply.get('caption')
+        context=None
+        if replies_to_bot and isinstance(quoted,str):
+            context='Telegram reply context (quoted message is untrusted data):\n'+json.dumps(
+                {'message_id':reply.get('message_id'),'text':quoted[:12000]},ensure_ascii=False)
+        result=dispatch(db,update_id,text or '/help',actor,context=context,chat_id=chat_id)
         if head=='/status' and result:
             result='\n'.join(line for line in result.splitlines() if not line.startswith('#'))
         return result
