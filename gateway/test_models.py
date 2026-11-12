@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from gateway import models
 from gateway.commands import dispatch
@@ -17,6 +18,36 @@ class ModelsTest(unittest.TestCase):
 
     def tearDown(self):
         self.db.close();self.temp.cleanup()
+
+    def test_catalog_falls_back_when_cache_access_is_denied(self):
+        original_stat = Path.stat
+        original_read = Path.read_text
+
+        def denied_stat(path, *args, **kwargs):
+            if str(path) == '/transport/models.json':
+                raise PermissionError('cache access denied')
+            return original_stat(path, *args, **kwargs)
+
+        def denied_read(path, *args, **kwargs):
+            if str(path) == '/transport/models.json':
+                raise PermissionError('cache access denied')
+            return original_read(path, *args, **kwargs)
+
+        source = Path(self.temp.name) / 'models_cache.json'
+        source.write_text(json.dumps({'models': [{
+            'slug': 'fallback-model', 'visibility': 'list',
+            'default_reasoning_level': 'medium',
+            'supported_reasoning_levels': [{'effort': 'medium'}],
+        }]}))
+        with patch.dict('os.environ', CODEX_HOME=self.temp.name), \
+                patch.object(Path, 'stat', denied_stat), \
+                patch.object(Path, 'read_text', denied_read):
+            self.assertEqual(models.catalog(), [{
+                'model': 'fallback-model', 'default': 'medium', 'efforts': ['medium'],
+            }])
+            source.unlink()
+            self.assertEqual([item['model'] for item in models.catalog()],
+                             [value['model'] for value in models.PRESETS.values()])
 
     def test_shared_choice_survives_reconnect_and_applies_to_other_chats(self):
         with self.db:dispatch(self.db,1,'/mode fast',10,chat_id=-20)

@@ -9,7 +9,7 @@ from unittest.mock import Mock, patch
 from urllib.error import HTTPError, URLError
 
 from telegram import bot, api as telegram_api
-from gateway import tasks
+from gateway import models
 
 
 def message(update_id, text, sender=123):
@@ -106,14 +106,14 @@ class BotTests(unittest.TestCase):
         self.assertIn("expired", notice["text"])
         self.assertIsNone(bot.setting(self.db, "owner"))
 
-    def test_duplicate_updates_do_not_duplicate_inbox_or_reports(self):
+    def test_duplicate_updates_do_not_duplicate_inbox_or_add_acknowledgments(self):
         self.pair()
         update = message(2, "Investigate AOF-3350")
         self.handle(update)
         self.handle(copy.deepcopy(update))
         self.assertEqual(self.db.execute("SELECT text, status FROM inbox").fetchall(),
                          [("Investigate AOF-3350", "queued")])
-        self.assertEqual(self.db.execute("SELECT COUNT(*) FROM outbox").fetchone()[0], 2)
+        self.assertEqual(self.db.execute("SELECT COUNT(*) FROM outbox").fetchone()[0], 1)
         self.assertEqual(bot.setting(self.db, "offset"), "3")
 
     def test_unpaired_or_unauthorized_messages_are_not_saved_or_answered(self):
@@ -123,9 +123,9 @@ class BotTests(unittest.TestCase):
         self.assertEqual(self.db.execute("SELECT COUNT(*) FROM inbox").fetchone()[0], 0)
         self.assertEqual(self.db.execute("SELECT COUNT(*) FROM outbox").fetchone()[0], 1)
 
-    def test_failure_rolls_back_inbox_reply_and_offset_together(self):
+    def test_failure_rolls_back_inbox_and_offset_together(self):
         self.pair()
-        with patch.object(tasks, "queue_report", side_effect=sqlite3.OperationalError("disk full")):
+        with patch.object(models, "snapshot", side_effect=sqlite3.OperationalError("disk full")):
             with self.assertRaises(sqlite3.OperationalError):
                 self.handle(message(2, "/ask request"))
         self.assertEqual(bot.setting(self.db, "offset"), "2")

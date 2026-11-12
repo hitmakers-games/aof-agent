@@ -33,13 +33,17 @@ def publish_catalog():
 
 def catalog():
     path = Path('/transport/models.json')
-    if path.exists():
+    try:
         return json.loads(path.read_text())
+    except OSError:
+        pass
     source = Path(os.environ.get('CODEX_HOME', '/state/auth')) / 'models_cache.json'
-    if source.exists():
+    try:
         return [{'model': item['slug'], 'default': item['default_reasoning_level'],
                  'efforts': [level['effort'] for level in item['supported_reasoning_levels']]}
                 for item in json.loads(source.read_text()).get('models', []) if item.get('visibility')=='list']
+    except OSError:
+        pass
     return [{'model': value['model'], 'default': value['effort'],
              'efforts': ['low', 'medium', 'high', 'xhigh', 'max'] + ([] if 'luna' in value['model'] else ['ultra'])}
             for value in PRESETS.values()]
