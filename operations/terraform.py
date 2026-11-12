@@ -25,6 +25,9 @@ def environment(kubeconfig):
     cache=Path('/workspace/.terraform-cache')
     cache.mkdir(exist_ok=True,mode=0o700)
     result['TF_PLUGIN_CACHE_DIR']=str(cache)
+    config=Path('/tmp/aof-terraform.rc')
+    config.write_text('provider_installation {\n  filesystem_mirror {\n    path = "/workspace/.terraform-mirror"\n  }\n}\n')
+    result['TF_CLI_CONFIG_FILE']=str(config)
     return result
 
 
