@@ -34,7 +34,8 @@ def status_text(db):
 
 def refresh_typing(db, api, next_refresh=0, now=None):
     people = db.execute("""SELECT DISTINCT COALESCE(chat_id,?) FROM inbox
-                           WHERE status IN ('queued','running','cancelling') LIMIT 5""",
+                           WHERE status IN ('queued','running','cancelling')
+                           AND COALESCE(context,'')!='ambient_group' LIMIT 5""",
                         (setting(db,'owner'),)).fetchall()
     if not people or not engine_ready(db):
         return 0

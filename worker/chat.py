@@ -73,17 +73,30 @@ def process_one(db, reply=None):
         return False
     task_id = item["update_id"]
     text = item["text"]
-    if item["context"]:
+    ambient = item["context"] == "ambient_group"
+    if item["context"] and not ambient:
         text += "\n\nObserved stand evidence:\n" + item["context"]
     try:
         prompt = prompt_for(db, text, item['requested_by'],item['chat_id'])
+        if ambient:
+            from telegram.history import read
+            recent=read(db,item['requested_by'],item['chat_id'],limit=30)
+            prompt += ("\nAmbient group discussion mode. The following are recent messages. "
+                       "Decide whether participants discuss you (the AOF developer bot) or implicitly address you. "
+                       "If unrelated or no useful contribution is needed, return exactly [[SILENT]]. "
+                       "Otherwise give a brief relevant reply in their language. Do not execute work, change state, "
+                       "or use tools in this mode. Explicit mentions authorize work separately.\n"
+                       + json.dumps(recent,ensure_ascii=False))
         if tasks.cancellation_requested(db, task_id):
             raise TaskCancelled("Task cancelled")
-        response = (reply(prompt) if reply else model_reply(
+        response = (reply(prompt) if reply else (ambient_reply if ambient else model_reply)(
             prompt, cancelled=lambda: tasks.cancellation_requested(db, task_id),
             actor=item['requested_by'] or setting_owner(db),chat_id=item['chat_id'] or setting_owner(db),request_id=task_id))
         if not isinstance(response, str) or not response.strip() or len(response.encode()) > 128 * 1024:
             raise TaskError("Invalid model response")
+        if ambient:
+            tasks.finish(db,task_id,response,silent=response.strip()=='[[SILENT]]')
+            return True
         proposals = None
         if response.lstrip().startswith('{'):
             try:
@@ -98,15 +111,24 @@ def process_one(db, reply=None):
                 response = 'The task draft was malformed. No tasks were registered; please try a more specific request.'
         tasks.finish(db, task_id, response, proposals=proposals)
     except TaskCancelled:
-        tasks.finish(db, task_id, "Cancelled", "cancelled")
+        tasks.finish(db, task_id, "Cancelled", "cancelled", silent=ambient)
     except (TaskError, OSError, subprocess.SubprocessError):
-        tasks.finish(db, task_id, "The developer could not complete this request. Use /status, then send a new request to retry.", "failed")
+        tasks.finish(db, task_id, "The developer could not complete this request. Use /status, then send a new request to retry.", "failed", silent=ambient)
     return True
 
 
 def setting_owner(db):
     from telegram.storage import setting
     return int(setting(db,'owner'))
+
+
+def ambient_reply(prompt, cancelled=None, actor=None, chat_id=None, request_id=None):
+    # Discussion analysis has no developer MCP server, shell, or web access.
+    root,_=developer_config(actor,chat_id,request_id)
+    args=command(root,'read-only')
+    args[-1:-1]=['--skip-git-repo-check','-c','features.shell_tool=false',
+                 '-c','web_search="disabled"']
+    return run_codex(args,prompt,180,child_environment(os.environ),cancelled=cancelled)['response']
 
 
 def model_reply(prompt, cancelled=None, actor=None, chat_id=None, request_id=None):

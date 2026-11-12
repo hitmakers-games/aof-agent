@@ -42,6 +42,36 @@ class GroupTests(unittest.TestCase):
         self.message('@AofAgentBot hello',456)
         self.assertEqual(self.db.execute('SELECT count(*) FROM inbox').fetchone()[0],0)
 
+    def test_listen_is_group_local_admin_only_and_never_dispatches_commands(self):
+        self.message('@AofAgentBot /listen on',456)
+        self.message('hello')
+        self.assertEqual(self.db.execute('SELECT count(*) FROM inbox').fetchone()[0],0)
+        self.message('@AofAgentBot /listen on')
+        self.message('What can the agent do?')
+        self.message('/task-run do work')
+        self.message('hello',999)
+        self.message('hello',456)
+        self.message('hello',chat=-901)
+        rows=self.db.execute('SELECT text,context FROM inbox').fetchall()
+        self.assertEqual(rows,[('What can the agent do?','ambient_group'),
+                               ('hello','ambient_group'),('hello','ambient_group')])
+        self.message('@AofAgentBot /listen off')
+        self.message('hello')
+        self.assertEqual(self.db.execute('SELECT count(*) FROM inbox').fetchone()[0],3)
+
+    def test_ambient_silence_and_reply(self):
+        from worker.chat import process_one
+        self.message('@AofAgentBot /listen on')
+        self.db.execute('DELETE FROM outbox')
+        self.db.commit()
+        self.message('unrelated discussion')
+        process_one(self.db,reply=lambda prompt:'[[SILENT]]')
+        self.assertEqual(self.db.execute('SELECT count(*) FROM outbox').fetchone()[0],0)
+        self.message('Can the agent read this?')
+        process_one(self.db,reply=lambda prompt:'Yes, I can read this group.')
+        self.assertEqual(self.db.execute('SELECT text FROM outbox').fetchone()[0],
+                         'Yes, I can read this group.')
+
     def test_private_chat_does_not_require_a_mention(self):
         self.message('hello',chat=123)
         self.assertEqual(self.db.execute('SELECT chat_id FROM inbox').fetchone()[0],123)

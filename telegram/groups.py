@@ -1,7 +1,7 @@
-"""Mention-only group conversations, isolated from every private conversation."""
+"""Group conversations with optional discussion analysis and private-chat isolation."""
 import re
 
-from gateway import access, work
+from gateway import access, work, tasks
 from gateway.commands import dispatch, minimum
 from telegram.storage import put, setting, queue_report
 
@@ -23,11 +23,23 @@ def handle(db, update_id, message):
     actor, chat_id, text = sender.get('id'), chat.get('id'), message.get('text','')
     username = setting(db,'bot_username')
     if (not username or type(actor) is not int or type(chat_id) is not int or chat_id >= 0
-            or sender.get('is_bot') or not isinstance(text,str) or not access.allowed(db,actor)):
+            or sender.get('is_bot') or not isinstance(text,str)):
         return True
     mention = r'(?<![\w])@' + re.escape(username) + r'(?![\w])'
     addressed_command=re.match(r'^/[a-z_]+@'+re.escape(username)+r'(?![\w])',text,re.IGNORECASE)
     if not re.search(mention,text,re.IGNORECASE) and not addressed_command:
+        if (enabled(db,chat_id) and setting(db,f'group:{chat_id}:listen','0')=='1'
+                and text.strip()
+                and not text.lstrip().startswith('/')):
+            try:
+                sponsor=int(setting(db,f'group:{chat_id}:listen_by','0'))
+                access.require(db,sponsor,'admin')
+                tasks.enqueue(db,update_id,text,actor=sponsor,chat_id=chat_id,
+                              context='ambient_group',notify=False)
+            except ValueError:
+                pass  # Queue pressure must not produce unsolicited notices.
+        return True
+    if not access.allowed(db,actor):
         return True
     if not enabled(db,chat_id):
         if not access.allowed(db,actor,'admin'):
@@ -40,6 +52,14 @@ def handle(db, update_id, message):
     argument=parts[1] if len(parts)>1 else ''
     from telegram.updates import action
     def command():
+        if head=='/listen':
+            access.require(db,actor,'admin')
+            if argument not in {'on','off'}:
+                return 'Use /listen on|off in this group.'
+            put(db,f'group:{chat_id}:listen',int(argument=='on'))
+            put(db,f'group:{chat_id}:listen_by',actor)
+            access.audit(db,actor,'group.listen.'+argument,chat_id)
+            return 'Group discussion analysis: '+argument+'.'
         access.require(db,actor,minimum(text))
         if head in PRIVATE:
             return 'Use this command in the private chat with @'+username+'.'

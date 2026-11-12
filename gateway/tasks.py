@@ -17,7 +17,7 @@ def task(db, task_id, lock=False):
     return dict(zip([c[0] for c in cursor.description], row)) if row else None
 
 
-def enqueue(db, update_id, text, kind="message", target=None, component="backend", window=15, actor=None, context=None, chat_id=None):
+def enqueue(db, update_id, text, kind="message", target=None, component="backend", window=15, actor=None, context=None, chat_id=None, notify=True):
     actor = actor if actor is not None else setting(db, 'owner')
     actor = int(actor) if actor is not None else None
     if actor is not None:
@@ -32,7 +32,7 @@ def enqueue(db, update_id, text, kind="message", target=None, component="backend
                   VALUES (?,?,'queued',?,?,?,?, 'Waiting for a worker',?,?,?)""",
                (update_id, text, kind, target, component, window, chat_id or actor, actor, context))
     worker_online = time.time() - float(setting(db, "engine_heartbeat", "0")) < 180
-    if kind != "message" or count or not worker_online:
+    if notify and (kind != "message" or count or not worker_online):
         queue_report(db, f"Received #{update_id}: {kind}" + (f" on {target}" if target else "") +
                      f". Use /status {update_id} or /cancel {update_id} in private chat.", chat_id or actor,authorized_by=actor)
 
@@ -87,7 +87,7 @@ def cancel(db, task_id):
     return f"#{task_id}: {status}." + (" Waiting for the worker to stop." if status == "cancelling" else "")
 
 
-def finish(db, task_id, response, status="completed", proposals=None):
+def finish(db, task_id, response, status="completed", proposals=None, silent=False):
     response = redact(response)
     with db:
         db.execute("BEGIN IMMEDIATE")
@@ -103,6 +103,8 @@ def finish(db, task_id, response, status="completed", proposals=None):
         db.execute("UPDATE inbox SET status=?,response=?,finished_at=CURRENT_TIMESTAMP,checkpoint=? WHERE update_id=?",
                    (status, response, status.capitalize(), task_id))
         text = response if item["kind"] == "message" and status == "completed" else f"#{task_id} — {status}\n{response}"
+        if silent:
+            return
         if not proposals or status != 'completed':
             queue_report(db, text, item['chat_id'],authorized_by=item['requested_by'])
         elif item['chat_id'] and item['chat_id']<0:
