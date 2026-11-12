@@ -25,6 +25,10 @@ def execute(db, actor, chat, action, reference=None, title=None, description='',
             access.require(db,actor,'admin')
         if reference:
             item=work.require_item(db,actor,reference,'operator',lock=True)
+            if description and description!=item['description']:
+                work.amend(db,actor,item['id'],description)
+            elif item['state'] in {'failed','interrupted','cancelled','held'}:
+                db.execute("UPDATE work_items SET state='awaiting_approval',held=0,cancel_requested=0 WHERE id=?",(item['id'],))
         else:
             item=work.create(db,actor,title or description[:100],description,shared=True,repositories=repositories)
         work.approve(db,actor,item['id'])
