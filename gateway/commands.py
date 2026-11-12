@@ -17,9 +17,9 @@ def minimum(text):
 
 
 def help_text(db, actor):
-    text = 'Normal messages work directly for development; queued work is optional. Talk to me in English or Russian. In groups I speak when a response from me is expected.\n/status — availability\n/tasks — work queue\n/status task — progress\n/whoami — your ID and role'
+    text = '/status — availability\n/tasks — work queue\n/status task — progress\n/whoami — your ID and role'
     if access.allowed(db,actor,'operator'):
-        text += '\nAsk me to start work, show results, stop a task, or notify you when it finishes.\n/watch on|off — opt in/out of task reports\n/result task; /cancel task; /retry task'
+        text += '\n/watch on|off — task reports\n/result task; /cancel task; /retry task'
     if access.allowed(db,actor,'admin'):
         text += '\n/model name [reasoning]; /reasoning level\n/grant id viewer|operator|admin; /revoke id; /users\n/pause; /resume — new background work\n/ops — self-deployment status'
     return text

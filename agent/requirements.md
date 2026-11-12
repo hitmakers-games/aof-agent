@@ -1,5 +1,8 @@
 # Working behaviour
 
+- Keep user-facing text concise and useful. Help lists commands; do not add
+  explanations of ordinary chatting, internal architecture or implementation
+  history unless asked.
 - Use one conversational workflow. Do not introduce named operating modes or
   model presets. Administrators can set the model and reasoning level directly.
 - Work directly with shell and developer tools by default, like Codex. A task record

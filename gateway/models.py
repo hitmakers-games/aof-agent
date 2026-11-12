@@ -90,7 +90,7 @@ def command(db, actor, chat_id, head, argument):
         current = validate(current)
         put(db, 'developer:model', json.dumps(current))
         access.audit(db, actor, 'model.select', 'developer', current)
-    return f"Model: {current['model']}\nReasoning: {current['effort']}\nShared across Telegram chats.\n/model name [reasoning]; /reasoning level"
+    return f"Model: {current['model']}\nReasoning: {current['effort']}"
 
 
 def snapshot(db, request_id, chat_id, override=None):
