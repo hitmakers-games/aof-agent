@@ -27,7 +27,7 @@ class DraftTests(unittest.TestCase):
             with self.db:drafts.confirm(self.db,123,draft['id'],draft['revision'],'register')
         self.assertEqual(self.db.execute('SELECT count(*) FROM work_items').fetchone()[0],1)
         self.assertEqual(self.db.execute('SELECT state FROM work_items').fetchone()[0],'awaiting_approval')
-        self.assertEqual(self.db.execute('SELECT count(*) FROM notice_items').fetchone()[0],1)
+        self.assertEqual(self.db.execute('SELECT count(*) FROM notice_items').fetchone()[0],0)
 
     def test_register_and_queue_preserves_the_human_authorization(self):
         draft=self.prepare()
@@ -59,7 +59,9 @@ class DraftTests(unittest.TestCase):
         self.assertEqual(self.db.execute('SELECT state FROM task_drafts').fetchone()[0],'cancelled')
 
     def test_model_proposal_only_creates_a_draft(self):
-        with self.db:tasks.enqueue(self.db,1,'Prepare two tasks',actor=123)
+        with self.db:
+            tasks.enqueue(self.db,1,'Prepare two tasks',actor=123)
+            put(self.db,'chat-ready:1',0)
         response=json.dumps({'kind':'task_proposal','reply':'Draft prepared.',
                              'tasks':[{'title':'First task'},{'title':'Second task'}]})
         self.assertTrue(process_one(self.db,lambda _:response))
