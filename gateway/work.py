@@ -1,6 +1,7 @@
 """Durable assignments. Approval and execution are separate transitions."""
 import hashlib
 import json
+import secrets
 import time
 import uuid
 
@@ -9,6 +10,15 @@ from telegram.storage import setting
 
 
 TERMINAL = {'cancelled', 'failed', 'interrupted', 'ready_for_review'}
+ALIAS_WORDS = ('amber', 'birch', 'comet', 'delta', 'ember', 'fable', 'glade', 'harbor',
+               'indigo', 'juniper', 'kestrel', 'lantern', 'meadow', 'nova', 'orbit', 'pebble',
+               'quartz', 'raven', 'saffron', 'timber', 'umber', 'violet', 'willow', 'zephyr')
+
+
+def new_issue_key(db):
+    # Three word choices give over 13,000 distinct short aliases; the database
+    # constraint remains the authority if simultaneous requests collide.
+    return 'TG-' + '-'.join(secrets.choice(ALIAS_WORDS) for _ in range(3))
 
 
 def revision(title, description, mode='ask', repositories=None):
@@ -43,7 +53,8 @@ def create(db, actor, title, description='', source='telegram', mode='ask', exte
     if not title.strip() or len(title) > 500 or len(description) > 32000:
         raise ValueError('Task title or description exceeds its limit.')
     task_id = uuid.uuid4().hex
-    issue_key = issue_key or 'TG-' + task_id[:12]
+    generated_key = issue_key is None
+    issue_key = issue_key or new_issue_key(db)
     names = []
     if repositories:
         from coding.config import repositories as validate
@@ -52,12 +63,19 @@ def create(db, actor, title, description='', source='telegram', mode='ask', exte
     automatic = actor is not None and mode == 'auto' and setting(db, 'autostart', 'off') == 'on' and not origin_action
     state = 'queued' if automatic else 'awaiting_approval'
     now = time.time()
-    db.execute('''INSERT INTO work_items(id,source,external_id,issue_key,title,description,revision,state,mode,
+    values = (task_id, source, external_id, issue_key, title.strip(), description.strip(), rev, state, mode,
+              'shared' if shared or source == 'jira' else 'private', actor, rev if automatic else None,
+              origin_action, now, now, actor if automatic else None, 'automatic' if automatic else None)
+    insert = '''INSERT INTO work_items(id,source,external_id,issue_key,title,description,revision,state,mode,
                   visibility,requester_id,approved_revision,origin_action,created_at,updated_at,approved_by,approval_origin)
-                  VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
-               (task_id, source, external_id, issue_key, title.strip(), description.strip(), rev, state, mode,
-                'shared' if shared or source == 'jira' else 'private', actor, rev if automatic else None,
-                origin_action, now, now, actor if automatic else None, 'automatic' if automatic else None))
+                  VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'''
+    try:
+        db.execute(insert, values)
+    except Exception as error:
+        if not generated_key or 'issue_key' not in str(error):
+            raise
+        issue_key = new_issue_key(db)
+        db.execute(insert, values[:3] + (issue_key,) + values[4:])
     db.execute('UPDATE work_items SET repositories=? WHERE id=?', (json.dumps(names), task_id))
     access.audit(db, actor, 'work.received', task_id, {'source': source, 'automatic': automatic})
     if notify:

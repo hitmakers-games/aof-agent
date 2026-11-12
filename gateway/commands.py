@@ -67,8 +67,16 @@ def dispatch(db, update_id, text, actor=None, context=None, chat_id=None):
     if head in {'/tasks','/work'}:
         text = work.listing(db, actor)
         if access.allowed(db, actor, 'operator'):
-            rows = db.execute('''SELECT update_id,status,kind FROM inbox WHERE chat_id=? OR (chat_id IS NULL AND ?=?)
-                                 ORDER BY created_at DESC LIMIT 10''', (actor, str(actor), setting(db,'owner'))).fetchall()
+            owner = setting(db, 'owner')
+            scope = '(chat_id=? OR (chat_id IS NULL AND ?=?))'
+            active = db.execute(f'''SELECT update_id,status,kind FROM inbox WHERE {scope}
+                                    AND status IN ('queued','running','cancelling') ORDER BY update_id DESC''',
+                                (actor, str(actor), owner)).fetchall()
+            completed = db.execute(f'''SELECT update_id,status,kind FROM inbox WHERE {scope}
+                                       AND status NOT IN ('queued','running','cancelling')
+                                       ORDER BY update_id DESC LIMIT 3''',
+                                   (actor, str(actor), owner)).fetchall()
+            rows = active + completed
             text += '\nYour chat/diagnostic jobs:\n' + '\n'.join(f'#{uid}: {state} ({kind})' for uid,state,kind in rows)
         return text
     if head == '/status':

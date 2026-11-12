@@ -49,6 +49,17 @@ class GatewayTests(unittest.TestCase):
         self.assertEqual(tasks.task(self.db, 1)["status"], "cancelled")
         self.assertNotIn("discarded", tasks.task(self.db, 1)["response"])
 
+    def test_tasks_shows_only_three_completed_chat_jobs_and_all_active_jobs(self):
+        with self.db:
+            for uid in range(1, 7):
+                self.db.execute("INSERT INTO inbox(update_id,text,status,kind,chat_id,requested_by) VALUES (?,?,?,?,?,?)",
+                                (uid, f"request {uid}", "queued" if uid == 6 else "completed", "message", 123, 123))
+        listing = self.command(10, "/tasks")
+        history = listing.split("Your chat/diagnostic jobs:\n", 1)[1]
+        self.assertIn("#6: queued", history)
+        self.assertEqual(history.count(": completed"), 3)
+        self.assertNotIn("#1:", history)
+
     def test_queued_cancel_prevents_claim_and_completed_cancel_does_not_reopen(self):
         self.command(1, "/ask queued")
         self.command(2, "/cancel 1")

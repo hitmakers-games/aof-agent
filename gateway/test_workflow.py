@@ -24,6 +24,14 @@ class WorkflowTests(unittest.TestCase):
         with self.db,patch('gateway.notices.time.time',return_value=100):
             return work.create(self.db,123,f'Task {number}','Details',mode=mode,shared=True)
 
+    def test_generated_task_alias_is_readable_unique_and_resolves_with_legacy_uuid(self):
+        first=self.register()
+        second=self.register(2)
+        self.assertRegex(first['issue_key'], r'^TG-(?:[a-z]+-){2}[a-z]+$')
+        self.assertNotEqual(first['issue_key'], second['issue_key'])
+        self.assertEqual(work.get(self.db, first['issue_key'])['id'], first['id'])
+        self.assertEqual(work.get(self.db, first['id'])['issue_key'], first['issue_key'])
+
     def flush(self):
         notices.flush(self.db,131)
         row=self.db.execute('SELECT reply_markup,message_key FROM outbox ORDER BY id DESC LIMIT 1').fetchone()
