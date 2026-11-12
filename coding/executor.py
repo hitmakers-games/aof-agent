@@ -23,8 +23,8 @@ class Execution:
         if set(value)-{'model_options'} != {'run_id', 'task_id', 'attempt', 'repositories', 'prompt'}:
             raise ValueError('Invalid request')
         root = task_directory(value['task_id'], value['attempt'])
-        from gateway.models import validate,PRESETS
-        value['model_options']=validate(value.get('model_options',PRESETS['balanced']))
+        from gateway.models import validate,DEFAULT
+        value['model_options']=validate(value.get('model_options',DEFAULT))
         names = repositories(value['repositories'])
         if len(value['run_id']) != 32 or not isinstance(value['prompt'], str) or len(value['prompt'].encode()) > 128*1024:
             raise ValueError('Invalid request')

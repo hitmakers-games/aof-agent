@@ -47,27 +47,27 @@ class ModelsTest(unittest.TestCase):
             }])
             source.unlink()
             self.assertEqual([item['model'] for item in models.catalog()],
-                             [value['model'] for value in models.PRESETS.values()])
+                             [value['model'] for value in models.FALLBACK_MODELS])
 
     def test_shared_choice_survives_reconnect_and_applies_to_other_chats(self):
-        with self.db:dispatch(self.db,1,'/mode fast',10,chat_id=-20)
+        with self.db:dispatch(self.db,1,'/model gpt-6-luna low',10,chat_id=-20)
         other=connect(self.path)
         try:
-            self.assertEqual(models.selected(other,-20),models.PRESETS['fast'])
-            self.assertEqual(models.selected(other,10),models.PRESETS['fast'])
+            self.assertEqual(models.selected(other,-20),{'model':'gpt-6-luna','effort':'low'})
+            self.assertEqual(models.selected(other,10),{'model':'gpt-6-luna','effort':'low'})
         finally:other.close()
 
     def test_upgrade_carries_owner_preference_and_ignores_old_group_override(self):
         preference = {'model': 'gpt-6.1-sol', 'effort': 'medium'}
         with self.db:
             put(self.db, 'model:10', json.dumps(preference))
-            put(self.db, 'model:-20', json.dumps(models.PRESETS['smart']))
+            put(self.db, 'model:-20', json.dumps({'model':'gpt-6-astra','effort':'high'}))
             models.initialize(self.db)
         self.assertEqual(models.selected(self.db, -20), preference)
         with self.db:
-            dispatch(self.db, 1, '/mode fast', 10, chat_id=-20)
+            dispatch(self.db, 1, '/model gpt-6-luna low', 10, chat_id=-20)
             models.initialize(self.db)
-        self.assertEqual(models.selected(self.db, 10), models.PRESETS['fast'])
+        self.assertEqual(models.selected(self.db, 10), {'model':'gpt-6-luna','effort':'low'})
 
     def test_other_admin_changes_the_same_shared_preference(self):
         from gateway import access
@@ -81,27 +81,29 @@ class ModelsTest(unittest.TestCase):
         with self.db:
             access.grant(self.db, 10, 11, 'viewer')
         with self.assertRaises(ValueError):
-            models.command(self.db, 11, -20, '/mode', 'fast')
-        self.assertEqual(models.selected(self.db, 10), models.PRESETS['balanced'])
+            models.command(self.db, 11, -20, '/model', 'gpt-6-luna low')
+        self.assertEqual(models.selected(self.db, 10), models.DEFAULT)
 
-    def test_one_message_override_does_not_change_saved_mode(self):
+    def test_removed_commands_do_not_create_requests_or_change_settings(self):
         with self.db:
-            dispatch(self.db,1,'/mode fast',10)
-            dispatch(self.db,2,'/smart solve the difficult problem',10)
-        self.assertEqual(models.for_request(self.db,2,10),models.PRESETS['smart'])
-        self.assertEqual(models.selected(self.db,10),models.PRESETS['fast'])
-        self.assertEqual(self.db.execute('SELECT text FROM inbox').fetchone()[0],'solve the difficult problem')
+            for command in ('/mode fast','/fast explain this','/smart solve this'):
+                self.assertEqual(dispatch(self.db,1,command,10),'Unknown command. Use /help.')
+        self.assertEqual(models.selected(self.db,10),models.DEFAULT)
+        self.assertEqual(self.db.execute('SELECT count(*) FROM inbox').fetchone()[0],0)
+        self.assertNotIn('Mode:',dispatch(self.db,2,'/status',10))
+        self.assertNotIn('/mode ',dispatch(self.db,3,'/help',10))
 
     def test_queued_request_keeps_its_original_choice(self):
         with self.db:
-            dispatch(self.db,1,'/fast explain this',10)
-            dispatch(self.db,2,'/mode smart',10)
-        self.assertEqual(models.for_request(self.db,1,10),models.PRESETS['fast'])
+            dispatch(self.db,1,'/model gpt-6-luna low',10)
+            dispatch(self.db,2,'explain this',10)
+            dispatch(self.db,3,'/model gpt-6-astra high',10)
+        self.assertEqual(models.for_request(self.db,2,10),{'model':'gpt-6-luna','effort':'low'})
 
     def test_invalid_combination_does_not_replace_saved_choice(self):
         with self.assertRaises(ValueError):
             dispatch(self.db,1,'/reasoning impossible',10)
-        self.assertEqual(models.selected(self.db,10),models.PRESETS['balanced'])
+        self.assertEqual(models.selected(self.db,10),models.DEFAULT)
 
 
 if __name__=='__main__':unittest.main()

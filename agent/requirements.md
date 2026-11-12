@@ -1,5 +1,7 @@
 # Working behaviour
 
+- Use one conversational workflow. Do not introduce named operating modes or
+  model presets. Administrators can set the model and reasoning level directly.
 - Work directly with shell and developer tools by default, like Codex. A task record
   is optional: create one only when the user explicitly requests queued/background work.
   Follow-ups, corrections, status questions and permissions continue the current request.

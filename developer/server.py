@@ -22,7 +22,7 @@ def schema(properties,required=()):
 
 STRING={'type':'string'}
 TOOLS=[
-    {'name':'settings','description':'Admin only: change the shared model/profile or grant/revoke Telegram user roles. Read or list access with action=users.','inputSchema':schema({'action':{'type':'string','enum':['model','mode','reasoning','grant','revoke','users','pause','resume']},'value':STRING},['action'])},
+    {'name':'settings','description':'Admin only: change the shared model or reasoning level, or grant/revoke Telegram user roles. Read or list access with action=users.','inputSchema':schema({'action':{'type':'string','enum':['model','reasoning','grant','revoke','users','pause','resume']},'value':STRING},['action'])},
     {'name':'work','description':'The shared work queue. Use start only when the user explicitly requests queued or background work. Ordinary conversation and direct development do not require a task. Reuse reference for an existing Jira/Telegram task. Delete hides a closed local queue item while retaining its record and audit history; it never deletes an external Jira issue. Only set notify when asked for reports. Watch/unwatch subscribes this chat to a task, mine, all (admin), or jira; minutes=0 means changes only. Status includes the saved result. Background tasks use progress with a short description at meaningful stages.','inputSchema':schema({'action':{'type':'string','enum':['start','list','status','cancel','delete','watch','unwatch','progress']},'reference':STRING,'title':STRING,'description':STRING,'repositories':{'type':'array','items':STRING},'notify':{'type':'boolean'},'topic':{'type':'string','enum':['mine','all','jira']},'minutes':{'type':'integer','minimum':0,'maximum':1440},'events':{'type':'string','enum':['changes','finished']},'delivery':{'type':'string','enum':['answer','changes','published','deployed']}},['action'])},
     {'name':'memory','description':'Read shared versioned project memory or immediately remember a confirmed nonsecret fact in aof-agent master. Admins may write; never save secrets, personal information, or raw chat transcripts. Edit shared rules directly with Git when asked.','inputSchema':schema({'action':{'type':'string','enum':['read','remember']},'text':STRING},['action'])},
     {'name':'health','description':'Safe service availability, without logs or sensitive configuration. Available to viewers.','inputSchema':schema({})},
@@ -53,7 +53,7 @@ class Developer:
                 if action in {'pause','resume'}:
                     from gateway.commands import dispatch
                     return dispatch(self.db,0,'/'+action,self.actor,chat_id=self.chat)
-                if action in {'model','mode','reasoning'}:
+                if action in {'model','reasoning'}:
                     from gateway.models import command
                     return command(self.db,self.actor,self.chat,'/'+action,args.get('value',''))
                 return access.command(self.db,self.actor,'/'+action,args.get('value',''))

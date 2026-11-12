@@ -7,11 +7,12 @@ from gateway import access
 from telegram.storage import put, setting
 
 
-PRESETS = {
-    'fast': {'model': 'gpt-6-luna', 'effort': 'low'},
-    'balanced': {'model': 'gpt-6.1-sol', 'effort': 'medium'},
-    'smart': {'model': 'gpt-6-astra', 'effort': 'high'},
-}
+DEFAULT = {'model': 'gpt-6.1-sol', 'effort': 'medium'}
+FALLBACK_MODELS = (
+    {'model': 'gpt-6-luna', 'effort': 'low'},
+    DEFAULT,
+    {'model': 'gpt-6-astra', 'effort': 'high'},
+)
 
 
 def publish_catalog():
@@ -46,13 +47,13 @@ def catalog():
         pass
     return [{'model': value['model'], 'default': value['effort'],
              'efforts': ['low', 'medium', 'high', 'xhigh', 'max'] + ([] if 'luna' in value['model'] else ['ultra'])}
-            for value in PRESETS.values()]
+            for value in FALLBACK_MODELS]
 
 
 def selected(db, chat_id):
     # Carry forward the owner's preference when upgrading from per-chat settings.
     # A group's old override must never become the shared developer preference.
-    legacy = setting(db, f"model:{setting(db, 'owner')}", json.dumps(PRESETS['balanced']))
+    legacy = setting(db, f"model:{setting(db, 'owner')}", json.dumps(DEFAULT))
     return json.loads(setting(db, 'developer:model', legacy))
 
 
@@ -69,16 +70,14 @@ def validate(value):
 
 
 def command(db, actor, chat_id, head, argument):
+    if head not in {'/models', '/model', '/reasoning'}:
+        raise ValueError('Unknown command. Use /model or /reasoning.')
     current = selected(db, chat_id)
     if head == '/models':
         return '\n'.join(item['model'] + ': ' + ', '.join(item['efforts']) for item in catalog())
     if argument:
         access.require(db, actor, 'admin')
-        if head == '/mode':
-            if argument not in PRESETS:
-                raise ValueError('Use /mode fast|balanced|smart.')
-            current = dict(PRESETS[argument])
-        elif head == '/model':
+        if head == '/model':
             parts = argument.split()
             if len(parts) > 2:
                 raise ValueError('Use /model model-name [reasoning].')
@@ -91,7 +90,7 @@ def command(db, actor, chat_id, head, argument):
         current = validate(current)
         put(db, 'developer:model', json.dumps(current))
         access.audit(db, actor, 'model.select', 'developer', current)
-    return f"Model: {current['model']}\nReasoning: {current['effort']}\nShared across Telegram chats.\n/mode fast|balanced|smart; /model name [reasoning]; /reasoning level\n/fast message or /smart message changes only that request."
+    return f"Model: {current['model']}\nReasoning: {current['effort']}\nShared across Telegram chats.\n/model name [reasoning]; /reasoning level"
 
 
 def snapshot(db, request_id, chat_id, override=None):

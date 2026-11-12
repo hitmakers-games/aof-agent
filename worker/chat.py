@@ -145,7 +145,7 @@ def interim_reply(db, item, text):
 def model_reply(prompt, cancelled=None, actor=None, chat_id=None, request_id=None, model_options=None,
                 work_id=None, followups=None, accepted=None, released=None, output_schema=None, interim=None):
     from gateway import access
-    selected=models.validate(model_options or models.PRESETS['balanced'])
+    selected=models.validate(model_options or models.DEFAULT)
     actor_role='operator'
     if os.environ.get('AOF_DATABASE_DSN_FILE'):
         db=connect('/unused')

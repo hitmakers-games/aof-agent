@@ -8,7 +8,7 @@ from telegram.storage import setting, put
 STANDS = {'dev': 'aof-dev', 'feature': 'aof-feature', 'release': 'aof-release'}
 COMPONENTS = {'backend': 'aof-back', 'frontend': 'frontend-gateway'}
 VIEWER = {'/start', '/help', '/whoami', '/status', '/tasks', '/work', '/ops'}
-ADMIN = {'/grant', '/revoke', '/users', '/autostart', '/pause', '/resume', '/coding', '/model', '/models', '/reasoning', '/mode', '/fast', '/smart', '/ops'}
+ADMIN = {'/grant', '/revoke', '/users', '/autostart', '/pause', '/resume', '/coding', '/model', '/models', '/reasoning', '/ops'}
 
 
 def minimum(text):
@@ -21,7 +21,7 @@ def help_text(db, actor):
     if access.allowed(db,actor,'operator'):
         text += '\nAsk me to start work, show results, stop a task, or notify you when it finishes.\n/watch on|off — opt in/out of task reports\n/result task; /cancel task; /retry task'
     if access.allowed(db,actor,'admin'):
-        text += '\n/mode fast|balanced|smart; /model name [reasoning]\n/grant id viewer|operator|admin; /revoke id; /users\n/pause; /resume — new background work\n/ops — self-deployment status'
+        text += '\n/model name [reasoning]; /reasoning level\n/grant id viewer|operator|admin; /revoke id; /users\n/pause; /resume — new background work\n/ops — self-deployment status'
     return text
 
 
@@ -53,7 +53,7 @@ def dispatch(db, update_id, text, actor=None, context=None, chat_id=None):
         return access.command(db, actor, head, argument)
     if head in {'/start','/help'}:
         return help_text(db, actor)
-    if head in {'/models','/model','/reasoning','/mode'}:
+    if head in {'/models','/model','/reasoning'}:
         from gateway.models import command
         return command(db, actor, chat_id or actor, head, argument)
     if head=='/ops':
@@ -81,7 +81,7 @@ def dispatch(db, update_id, text, actor=None, context=None, chat_id=None):
         active = db.execute("SELECT count(*) FROM inbox WHERE status IN ('queued','running','cancelling')").fetchone()[0]
         coding_active=db.execute("SELECT count(*) FROM work_items WHERE state IN ('running','cancelling')").fetchone()[0]
         paused = setting(db,'paused','0')=='1'
-        result = (f"Mode: direct development\nBackground queue: {'paused' if paused else 'running'}\n"
+        result = (f"Background queue: {'paused' if paused else 'running'}\n"
                 f"Developer: {'online' if age<180 else 'offline'}\nStand diagnostics: {'online' if ops_age<30 else 'offline'}\n"
                 f"Task coordinator: {'online' if coordinator_age<30 else 'offline'}\n"
                 f"Jira: {setting(db,'jira_state','not configured')}\nCoding worker: {coding_state}\n"
@@ -167,13 +167,11 @@ def dispatch(db, update_id, text, actor=None, context=None, chat_id=None):
     if head == '/draft':
         from gateway import drafts
         return drafts.describe(db,actor,argument)
-    if not head.startswith('/') or head in {'/ask','/bug','/fast','/smart'}:
+    if not head.startswith('/') or head in {'/ask','/bug'}:
         value = text if not head.startswith('/') else argument
         if not value.strip():
             raise ValueError('Please include a message.')
-        from gateway.models import PRESETS
-        override=PRESETS.get(head[1:]) if head in {'/fast','/smart'} else None
-        tasks.enqueue(db,update_id,value,kind='bug' if head=='/bug' else 'message',actor=actor,context=context,chat_id=chat_id,model_options=override)
+        tasks.enqueue(db,update_id,value,kind='bug' if head=='/bug' else 'message',actor=actor,context=context,chat_id=chat_id)
         return None
     if head in {'/health','/changes','/logs','/analyze'}:
         args=argument.split()
