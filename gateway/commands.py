@@ -17,7 +17,7 @@ def minimum(text):
 
 
 def help_text(db, actor):
-    text = 'Talk to me normally, in English or Russian. In groups I speak when a response from me is expected.\n/status — availability\n/tasks — work queue\n/status task — progress\n/whoami — your ID and role'
+    text = 'Normal messages work directly for development; queued work is optional. Talk to me in English or Russian. In groups I speak when a response from me is expected.\n/status — availability\n/tasks — work queue\n/status task — progress\n/whoami — your ID and role'
     if access.allowed(db,actor,'operator'):
         text += '\nAsk me to start work, show results, stop a task, or notify you when it finishes.\n/watch on|off — opt in/out of task reports\n/result task; /cancel task; /retry task'
     if access.allowed(db,actor,'admin'):
@@ -80,11 +80,13 @@ def dispatch(db, update_id, text, actor=None, context=None, chat_id=None):
         coding_state = ('online' if coding_age < 180 else 'offline') if setting(db,'coding_enabled','0')=='1' else 'not enabled'
         active = db.execute("SELECT count(*) FROM inbox WHERE status IN ('queued','running','cancelling')").fetchone()[0]
         coding_active=db.execute("SELECT count(*) FROM work_items WHERE state IN ('running','cancelling')").fetchone()[0]
-        result = (f"Developer: {'online' if age<180 else 'offline'}\nStand diagnostics: {'online' if ops_age<30 else 'offline'}\n"
+        paused = setting(db,'paused','0')=='1'
+        result = (f"Mode: direct development\nBackground queue: {'paused' if paused else 'running'}\n"
+                f"Developer: {'online' if age<180 else 'offline'}\nStand diagnostics: {'online' if ops_age<30 else 'offline'}\n"
                 f"Task coordinator: {'online' if coordinator_age<30 else 'offline'}\n"
                 f"Jira: {setting(db,'jira_state','not configured')}\nCoding worker: {coding_state}\n"
-                f"Auto-start: {setting(db,'autostart','off')}; paused: {setting(db,'paused','0')=='1'}\n"
-                + f'{active} active chat/diagnostic jobs; {coding_active} active coding tasks.')
+                f"Auto-start: {setting(db,'autostart','off')}\n"
+                + f'{active} active conversations; {coding_active} active coding tasks.')
         if access.allowed(db,actor,'operator'):
             own=db.execute("SELECT update_id,status FROM inbox WHERE (chat_id=? OR (chat_id IS NULL AND ?=?)) AND status IN ('queued','running','cancelling') LIMIT 5",
                            (actor,str(actor),setting(db,'owner'))).fetchall()
