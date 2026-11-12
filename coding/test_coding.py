@@ -35,7 +35,7 @@ class CodingTests(unittest.TestCase):
     def test_only_approved_selected_scope_can_start(self):
         with self.db:
             no_repo=work.create(self.db,123,'No target')
-            with self.assertRaises(ValueError):work.approve(self.db,123,no_repo['id'])
+            self.assertEqual(no_repo['state'],'awaiting_approval')
         self.assertIsNone(queue.claim(self.db))
         item=self.task()
         claimed=queue.claim(self.db)

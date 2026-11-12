@@ -142,6 +142,8 @@ def main():
     finally:
         if setting(db,'self_deploy','')==request['id']:
             resume(db,kube,request)
+    from worker.outcome import deployment_finished
+    deployment_finished(db,request,succeeded,message)
     with db:
         queue_report(db,message+'\n/ops '+request['id'],request['chat_id'],required_role='admin',
                      event_key='operation:'+request['id'],authorized_by=request['actor'])

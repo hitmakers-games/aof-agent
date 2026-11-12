@@ -23,13 +23,13 @@ def schema(properties,required=()):
 STRING={'type':'string'}
 TOOLS=[
     {'name':'settings','description':'Admin only: change the shared model/profile or grant/revoke Telegram user roles. Read or list access with action=users.','inputSchema':schema({'action':{'type':'string','enum':['model','mode','reasoning','grant','revoke','users']},'value':STRING},['action'])},
-    {'name':'work','description':'The shared work queue. Start real development/research in the background so chat stays responsive. Explicit user requests authorize start; do not require a slash command. Reuse reference for an existing Jira/Telegram task. Delete hides a closed local queue item while retaining its record and audit history; it never deletes an external Jira issue. Only set notify when asked for reports. Watch/unwatch subscribes this chat to a task, mine, all (admin), or jira; minutes=0 means changes only. Status includes the saved result. Background tasks use progress with a short description at meaningful stages.','inputSchema':schema({'action':{'type':'string','enum':['start','list','status','cancel','delete','watch','unwatch','progress']},'reference':STRING,'title':STRING,'description':STRING,'repositories':{'type':'array','items':STRING},'notify':{'type':'boolean'},'topic':{'type':'string','enum':['mine','all','jira']},'minutes':{'type':'integer','minimum':0,'maximum':1440},'events':{'type':'string','enum':['changes','finished']}},['action'])},
-    {'name':'memory','description':'Read shared versioned project memory or immediately remember a confirmed nonsecret fact in aof-agent master. Admins may write; never save secrets, personal information, or raw chat transcripts. Rules/design changes are background development tasks.','inputSchema':schema({'action':{'type':'string','enum':['read','remember']},'text':STRING},['action'])},
+    {'name':'work','description':'The shared work queue. Use start only when the user explicitly requests queued or background work. Ordinary conversation and direct development do not require a task. Reuse reference for an existing Jira/Telegram task. Delete hides a closed local queue item while retaining its record and audit history; it never deletes an external Jira issue. Only set notify when asked for reports. Watch/unwatch subscribes this chat to a task, mine, all (admin), or jira; minutes=0 means changes only. Status includes the saved result. Background tasks use progress with a short description at meaningful stages.','inputSchema':schema({'action':{'type':'string','enum':['start','list','status','cancel','delete','watch','unwatch','progress']},'reference':STRING,'title':STRING,'description':STRING,'repositories':{'type':'array','items':STRING},'notify':{'type':'boolean'},'topic':{'type':'string','enum':['mine','all','jira']},'minutes':{'type':'integer','minimum':0,'maximum':1440},'events':{'type':'string','enum':['changes','finished']},'delivery':{'type':'string','enum':['answer','changes','published','deployed']}},['action'])},
+    {'name':'memory','description':'Read shared versioned project memory or immediately remember a confirmed nonsecret fact in aof-agent master. Admins may write; never save secrets, personal information, or raw chat transcripts. Edit shared rules directly with Git when asked.','inputSchema':schema({'action':{'type':'string','enum':['read','remember']},'text':STRING},['action'])},
     {'name':'health','description':'Safe service availability, without logs or sensitive configuration. Available to viewers.','inputSchema':schema({})},
     {'name':'capabilities','description':'Read actual developer identity and connected capabilities. Use before claiming missing access.','inputSchema':schema({})},
-    {'name':'self_deploy','description':'Build and deploy committed aof-agent code in a detached job, with rollback and Telegram reporting. Defaults to master; branch selects another committed app branch. It pulls and publishes clean checkouts first. Start returns immediately; acknowledge the queued job and finish the chat turn so it can restart this pod. Use status or /ops for progress.','inputSchema':schema({'action':{'type':'string','enum':['start','status']},'operation_id':STRING,'branch':STRING,'dockerfile':{'type':'string','enum':['worker/app.Dockerfile','worker/Dockerfile']}},['action'])},
+    {'name':'self_deploy','description':'Build and deploy committed aof-agent code in a detached job, with rollback and Telegram reporting. Defaults to master; branch selects another committed app branch. It pulls and publishes clean checkouts first. Start returns immediately; acknowledge the queued job and finish the chat turn so it can restart this pod. Use status or /ops for progress.','inputSchema':schema({'action':{'type':'string','enum':['start','status']},'operation_id':STRING,'branch':STRING,'task':STRING,'dockerfile':{'type':'string','enum':['worker/app.Dockerfile','worker/Dockerfile']}},['action'])},
     {'name':'terraform','description':'Plan/apply the agent module from aof-infra/k8s/selectel using the EXISTING company S3 state aof-k8s.tfstate and remote locking. Plan snapshots committed source; apply takes that saved operation_id. Destructive or unrelated changes are stopped. Runs outside this conversation and reports to Telegram.','inputSchema':schema({'action':{'type':'string','enum':['plan','apply','status']},'operation_id':STRING},['action'])},
-    {'name':'git','description':'List/checkout corporate repositories, inspect diff/log/status, fetch, commit and push the working branch. Checkout accepts branch, for example a Jira task key. Existing edits are preserved. No PRs. Shell edits and tests use returned checkout paths. Set deployment_reviewed only after inspecting workflow triggers and verifying that the push is authorized.','inputSchema':schema({'action':{'type':'string','enum':['list','checkout','status','diff','log','fetch','commit','push']},'repository':STRING,'message':STRING,'branch':STRING,'deployment_reviewed':{'type':'boolean'}},['action'])},
+    {'name':'git','description':'List/checkout corporate repositories, inspect diff/log/status, fetch, commit and push the working branch. Checkout accepts branch, for example a Jira task key. Existing edits are preserved. task selects an existing task checkout for recovery or follow-up, without creating a new task. No PRs. Shell edits and tests use returned checkout paths. Set deployment_reviewed only after inspecting workflow triggers and verifying that the push is authorized.','inputSchema':schema({'action':{'type':'string','enum':['list','checkout','status','diff','log','fetch','commit','push']},'repository':STRING,'message':STRING,'branch':STRING,'task':STRING,'deployment_reviewed':{'type':'boolean'}},['action'])},
     {'name':'jira','description':'Read/search/create/update/comment/assign/transition AOF Jira tasks; users searches assignable teammates. account_id=self assigns to this developer. Only create tasks when requested.','inputSchema':schema({'action':{'type':'string','enum':['myself','users','search','get','create','update','comment','assign','transitions','transition']},'issue':STRING,'query':STRING,'summary':STRING,'description':STRING,'account_id':STRING,'transition_id':STRING,'issue_type':STRING},['action'])},
     {'name':'kubernetes','description':'Inspect cluster workloads/logs and administer aof-agent: apply, patch, delete, scale, restart, or exec commands in its pods. Secrets are redacted. Production writes are protected.','inputSchema':schema({'action':{'type':'string','enum':['get','logs','apply','delete','patch','scale','restart','exec']},'namespace':STRING,'resource':STRING,'name':STRING,'manifest':{'type':'object','additionalProperties':True},'patch':{'type':'object','additionalProperties':True},'replicas':{'type':'integer','minimum':0,'maximum':5},'container':STRING,'tail':{'type':'integer','minimum':1,'maximum':300},'command':{'type':'array','items':STRING,'maxItems':40}},['action'])},
     {'name':'telegram_chats','description':'List conversations whose messages this bot has received and saved. Administrators can discover all retained chats.','inputSchema':schema({})},
@@ -65,11 +65,10 @@ class Developer:
             from developer.work_tools import execute
             with self.db:
                 if args['action']=='start':
-                    from developer.effects import once
                     from gateway.models import for_request
                     selected=for_request(self.db,os.environ.get('AOF_MCP_REQUEST','0'),self.chat)
-                    return once(self.db,os.environ.get('AOF_MCP_REQUEST','0'),'work.start',args,
-                        lambda:execute(self.db,self.actor,self.chat,model_options=selected,**args))
+                    return execute(self.db,self.actor,self.chat,model_options=selected,
+                        request_id=os.environ.get('AOF_MCP_REQUEST'),**args)
                 return execute(self.db,self.actor,self.chat,**args)
         if name=='memory':
             access.require(self.db,self.actor,'operator')
@@ -91,7 +90,7 @@ class Developer:
                     'runtime':runtime,
                     'work':'shared queue; background tasks; opt-in reports',
                     'shell':'workspace edits and commands enabled','git':'all corporate repositories; working branch commits and pushes',
-                    'jira':'AOF read and write','kubernetes':'aof-agent read/write; cluster workload reads',
+                    'jira':'AOF read and write','kubernetes':'aof-agent read/write; cluster workload reads' if access.allowed(self.db,self.actor,'admin') else 'read-only workloads and log summaries',
                     'self_deployment':'detached build, Terraform apply, rollback and restart reporting',
                     'terraform':'agent module in the existing aof-k8s.tfstate',
                     'telegram':'connected conversation history available to permitted roles','pull_requests':'disabled',
@@ -102,14 +101,33 @@ class Developer:
             from operations.client import execute
             values=dict(args)
             if name=='self_deploy' and values['action']=='start':values['action']='deploy'
-            result=execute(self.actor,self.chat,work_id=self.work_id,**values)
+            reference=values.pop('task',None)
+            selected_work=self.work_id
+            if reference:
+                from gateway.work import get
+                access.require(self.db,self.actor,'admin')
+                item=get(self.db,reference)
+                if not item:raise ValueError('Task checkout not found')
+                selected_work=item['id']
+            result=execute(self.actor,self.chat,work_id=selected_work,**values)
+            if name=='self_deploy' and result.get('state')=='queued':
+                with self.db:put(self.db,'request-operation:'+os.environ.get('AOF_MCP_REQUEST','0'),result['id'])
         elif name=='git':
             if args.get('repository') in {'aof-agent','aof-infra'} and args.get('action') in {'commit','push'}:
                 access.require(self.db,self.actor,'admin')
-            if args.get('action') in {'checkout','commit','push','fetch'} and not self.work_id:
-                raise ValueError('Start background work with the work tool; keep the chat available.')
-            if self.repositories is None:self.repositories=Repositories(self.root)
+            reference=args.pop('task',None)
+            root=self.root
+            if reference:
+                from gateway.work import get,require_item
+                item=get(self.db,reference) if access.allowed(self.db,self.actor,'admin') else require_item(self.db,self.actor,reference,'operator')
+                if not item:raise ValueError('Task checkout not found')
+                root=workspace(self.actor,self.chat,item['id'])
+            if self.repositories is None or self.repositories.root!=root:self.repositories=Repositories(root)
             result=self.repositories.execute(**args)
+            from developer import artifacts
+            request=os.environ.get('AOF_MCP_REQUEST','0')
+            if args['action']=='checkout':artifacts.checkout(self.db,request,args['repository'],self.repositories.root/args['repository'])
+            if args['action']=='push':artifacts.published(self.db,request,args['repository'],self.repositories.root/args['repository'])
         elif name=='jira':
             if self.jira is None:self.jira=Jira()
             if args.get('action') in {'create','comment'}:
@@ -117,7 +135,8 @@ class Developer:
                 result=once(self.db,os.environ.get('AOF_MCP_REQUEST','0'),'jira.'+args['action'],args,lambda:self.jira.execute(**args))
             else:result=self.jira.execute(**args)
         elif name=='kubernetes':
-            access.require(self.db,self.actor,'admin')
+            if args.get('action') in {'apply','delete','patch','scale','restart','exec'}:
+                access.require(self.db,self.actor,'admin')
             if self.kubernetes is None:self.kubernetes=Kubernetes()
             result=self.kubernetes.execute(**args)
         elif name=='telegram_history':result=read(self.db,self.actor,self.chat,**args)

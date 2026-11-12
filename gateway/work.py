@@ -1,7 +1,7 @@
 """Durable assignments. Approval and execution are separate transitions."""
 import hashlib
 import json
-import secrets
+import re
 import time
 import uuid
 
@@ -9,16 +9,16 @@ from gateway import access
 from telegram.storage import setting, put
 
 
-TERMINAL = {'cancelled', 'failed', 'interrupted', 'ready_for_review'}
-ALIAS_WORDS = ('amber', 'birch', 'comet', 'delta', 'ember', 'fable', 'glade', 'harbor',
-               'indigo', 'juniper', 'kestrel', 'lantern', 'meadow', 'nova', 'orbit', 'pebble',
-               'quartz', 'raven', 'saffron', 'timber', 'umber', 'violet', 'willow', 'zephyr')
-
-
-def new_issue_key(db):
-    # Three word choices give over 13,000 distinct short aliases; the database
-    # constraint remains the authority if simultaneous requests collide.
-    return 'TG-' + '-'.join(secrets.choice(ALIAS_WORDS) for _ in range(3))
+TERMINAL = {'cancelled','failed','interrupted','ready_for_review','completed','blocked'}
+def new_issue_key(db, title):
+    slug=re.sub(r'[^\w]+','-',title.casefold()).strip('-_')[:72].rstrip('-') or 'task'
+    base='TG-'+slug
+    candidate=base
+    number=2
+    while db.execute('SELECT 1 FROM work_items WHERE issue_key=?',(candidate,)).fetchone():
+        candidate=base+'-'+str(number)
+        number+=1
+    return candidate
 
 
 def revision(title, description, mode='ask', repositories=None):
@@ -59,7 +59,7 @@ def create(db, actor, title, description='', source='telegram', mode='ask', exte
         raise ValueError('Task title or description exceeds its limit.')
     task_id = uuid.uuid4().hex
     generated_key = issue_key is None
-    issue_key = issue_key or new_issue_key(db)
+    issue_key = issue_key or new_issue_key(db,title)
     names = []
     if repositories:
         from coding.config import repositories as validate
@@ -74,13 +74,13 @@ def create(db, actor, title, description='', source='telegram', mode='ask', exte
     insert = '''INSERT INTO work_items(id,source,external_id,issue_key,title,description,revision,state,mode,
                   visibility,requester_id,approved_revision,origin_action,created_at,updated_at,approved_by,approval_origin)
                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'''
-    try:
-        db.execute(insert, values)
-    except Exception as error:
-        if not generated_key or 'issue_key' not in str(error):
-            raise
-        issue_key = new_issue_key(db)
-        db.execute(insert, values[:3] + (issue_key,) + values[4:])
+    if generated_key:
+        # ON CONFLICT keeps PostgreSQL's transaction usable during concurrent creation.
+        while not db.execute(insert+' ON CONFLICT(issue_key) DO NOTHING',values).rowcount:
+            issue_key=new_issue_key(db,title)
+            values=values[:3]+(issue_key,)+values[4:]
+    else:
+        db.execute(insert,values)
     db.execute('UPDATE work_items SET repositories=? WHERE id=?', (json.dumps(names), task_id))
     access.audit(db, actor, 'work.received', task_id, {'source': source, 'automatic': automatic})
     if notify:
@@ -122,7 +122,8 @@ def hold(db, actor, reference, expected_revision=None):
 
 def describe(db, actor, reference):
     item = require_item(db, actor, reference)
-    text = f"{item['issue_key'] or item['id']}: {item['state']}"
+    key=item['issue_key'] if access.allowed(db,actor,'operator') or item['source']=='jira' else item['id']
+    text = f"{key or item['id']}: {item['state']}"
     if access.allowed(db, actor, 'operator'):
         text += '\n' + item['title']
         names = json.loads(item['repositories'])
@@ -136,13 +137,15 @@ def describe(db, actor, reference):
 
 
 def listing(db, actor, shared_only=False):
-    rows = db.execute('''SELECT id,issue_key,state,visibility,requester_id,title,checkpoint FROM work_items
+    rows = db.execute('''SELECT id,issue_key,state,visibility,requester_id,title,checkpoint,source FROM work_items
                          WHERE NOT EXISTS (SELECT 1 FROM settings WHERE key='work-deleted:' || work_items.id)
                          ORDER BY created_at DESC LIMIT 100''').fetchall()
-    return '\n'.join(f'{key or uid}: {state}'+(' — '+title[:90] if access.allowed(db,actor,'operator') else '')
-                     +(f' ({checkpoint})' if state=='running' and checkpoint and access.allowed(db,actor,'operator') else '')
-                     for uid, key, state, visibility, owner,title,checkpoint in rows
-                     if visibility == 'shared' or (not shared_only and (owner == actor or access.allowed(db,actor,'admin'))))[:3500] or 'No assignments yet.'
+    privileged=access.allowed(db,actor,'operator')
+    admin=access.allowed(db,actor,'admin')
+    return '\n'.join(f'{(key if privileged or source=="jira" else uid) or uid}: {state}'+(' — '+title[:90] if privileged else '')
+                     +(f' ({checkpoint})' if state=='running' and checkpoint and privileged else '')
+                     for uid, key, state, visibility, owner,title,checkpoint,source in rows
+                     if visibility == 'shared' or (not shared_only and (owner == actor or admin)))[:3500] or 'No assignments yet.'
 
 
 def delete(db, actor, reference):

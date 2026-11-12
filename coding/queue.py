@@ -16,7 +16,7 @@ def claim(db):
         if setting(db, 'coding_enabled', '0') != '1' or setting(db, 'paused', '0') == '1' or setting(db,'self_deploy',''):
             return None
         # The transaction lock makes this a global limit, across worker processes.
-        if db.execute("SELECT 1 FROM work_items WHERE state IN ('running','cancelling') LIMIT 1").fetchone():
+        if db.execute("SELECT 1 FROM work_items WHERE state IN ('running','cancelling','deploying') LIMIT 1").fetchone():
             return None
         row = db.execute("""SELECT id FROM work_items WHERE state='queued'
             AND approved_revision=revision AND held=0 AND cancel_requested=0
@@ -40,7 +40,7 @@ def claim(db):
 
 def cancelled(db, item):
     current = work.get(db, item['id'])
-    return bool(not current or current['state'] != 'running' or current['cancel_requested']
+    return bool(not current or current['state'] not in {'running','deploying'} or current['cancel_requested']
                 or current['revision'] != item['revision'] or current['approved_revision'] != item['revision']
                 or not access.allowed(db, item['approved_by'], 'operator'))
 
@@ -69,7 +69,7 @@ def finish(db, item, state, result, links=()):
 
 
 def recover(db):
-    rows = db.execute("SELECT work_id,id,revision FROM coding_runs WHERE phase NOT IN ('ready_for_review','failed','cancelled','held','interrupted','awaiting_approval')").fetchall()
+    rows = db.execute("SELECT work_id,id,revision FROM coding_runs WHERE phase NOT IN ('ready_for_review','completed','blocked','deploying','failed','cancelled','held','interrupted','awaiting_approval')").fetchall()
     for work_id, run_id, revision in rows:
         item = work.get(db, work_id)
         item.update(run_id=run_id, revision=revision)

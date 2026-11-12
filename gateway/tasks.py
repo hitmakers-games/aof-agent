@@ -20,6 +20,13 @@ def task(db, task_id, lock=False):
 def enqueue(db, update_id, text, kind="message", target=None, component="backend", window=15, actor=None, context=None, chat_id=None, model_options=None):
     actor = actor if actor is not None else setting(db, 'owner')
     actor = int(actor) if actor is not None else None
+    if kind=='message':
+        from gateway.conversation import batch,stop
+        if actor is not None:
+            access.require(db,actor,'viewer')
+        if stop(db,actor,chat_id or actor,text):return
+        if batch(db,actor,chat_id or actor,text,context,model_options):
+            return
     if actor is not None:
         access.require(db, actor, 'viewer' if kind=='message' else 'operator')
         pending = db.execute("SELECT count(*) FROM inbox WHERE requested_by=? AND status IN ('queued','running','cancelling')", (actor,)).fetchone()[0]
@@ -33,6 +40,9 @@ def enqueue(db, update_id, text, kind="message", target=None, component="backend
                (update_id, text, kind, target, component, window, chat_id or actor, actor, context))
     from gateway.models import snapshot
     snapshot(db, update_id, chat_id or actor, model_options)
+    if kind=='message':
+        from telegram.storage import put
+        put(db,'chat-ready:'+str(update_id),time.time()+1.5)
     worker_online = time.time() - float(setting(db, "engine_heartbeat", "0")) < 180
     if kind != "message":
         queue_report(db, f"Received #{update_id}: {kind}" + (f" on {target}" if target else "") +
@@ -56,9 +66,11 @@ def claim(db, worker):
         if worker=='model' and getattr(db,'row_lock',''):
             db.execute('SELECT pg_advisory_xact_lock(3350006)')
         query = f"""SELECT update_id FROM inbox q WHERE status='queued' AND {condition}
+            AND NOT EXISTS (SELECT 1 FROM settings WHERE key='chat-ready:' || CAST(q.update_id AS TEXT)
+                AND CAST(CASE WHEN key LIKE 'chat-ready:%' THEN value ELSE '0' END AS DOUBLE PRECISION)>?)
             AND NOT EXISTS (SELECT 1 FROM inbox active WHERE active.chat_id=q.chat_id
                 AND active.status IN ('running','cancelling')) ORDER BY created_at,update_id LIMIT 1"""
-        row = db.execute(query + getattr(db, "claim_lock", "")).fetchone()
+        row = db.execute(query + getattr(db, "claim_lock", ""),(time.time(),)).fetchone()
         if row:
             db.execute("UPDATE inbox SET status='running',started_at=CURRENT_TIMESTAMP,checkpoint=? WHERE update_id=?",
                        ("Collecting stand evidence" if worker == "operations" else "Preparing the developer's response", row[0]))
@@ -113,8 +125,12 @@ def finish(db, task_id, response, status="completed", proposals=None):
             propose(db, int(actor), proposals, introduction=response)
         db.execute("UPDATE inbox SET status=?,response=?,finished_at=CURRENT_TIMESTAMP,checkpoint=? WHERE update_id=?",
                    (status, response, status.capitalize(), task_id))
+        from gateway.conversation import finish as finish_followups
+        finish_followups(db,task_id,response,status)
         text = response if item["kind"] == "message" and status == "completed" else f"#{task_id} — {status}\n{response}"
         if response.strip()=='[[SILENT]]' and status=='completed':
+            return
+        if setting(db,'chat-parent:'+str(task_id)):
             return
         if not proposals or status != 'completed':
             queue_report(db, text, item['chat_id'],authorized_by=item['requested_by'],required_role='viewer' if item['kind']=='message' else 'operator')
@@ -136,7 +152,7 @@ def save_evidence(db, task_id, evidence):
 def recover(db, worker):
     condition = ("kind IN ('health','logs','changes','analyze') AND context IS NULL"
                  if worker == "operations" else "(kind IN ('message','task','bug') OR (kind='analyze' AND context IS NOT NULL))")
-    ids = [r[0] for r in db.execute(f"SELECT update_id FROM inbox WHERE status IN ('running','cancelling') AND {condition}")]
+    ids = [r[0] for r in db.execute(f"SELECT update_id FROM inbox WHERE status IN ('running','cancelling','steering','attached') AND {condition}")]
     for task_id in ids:
         finish(db, task_id, "The worker restarted before completion. The request was preserved; send a new request to retry.", "interrupted")
 

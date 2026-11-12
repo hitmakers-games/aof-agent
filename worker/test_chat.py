@@ -29,9 +29,8 @@ class ChatTests(unittest.TestCase):
 
     def test_prompt_carries_autonomy_and_follow_up_guidance(self):
         prompt = chat.prompt_for(self.db, "Continue")
-        for guidance in ("do not ask permission again", "continue independent work",
-                         "status question", "says to stop"):
-            self.assertIn(guidance, prompt)
+        for guidance in ("requested work directly", "Do not create a background task", "correction", "unless asked to stop"):
+            self.assertIn(guidance.lower(), prompt.lower())
 
     def test_reply_and_report_commit_together_and_are_not_run_again(self):
         self.enqueue(1)
@@ -80,7 +79,7 @@ class ChatTests(unittest.TestCase):
         with self.db: bot.put(self.db, "engine_heartbeat", 0)
         update["update_id"]=2
         bot.handle_update(self.db, update, "", 0)
-        self.assertEqual(self.db.execute("SELECT status FROM inbox WHERE update_id=2").fetchone()[0], "queued")
+        self.assertEqual(self.db.execute("SELECT count(*) FROM inbox").fetchone()[0], 1)
 
     def test_admin_private_context_continues_across_chats_without_public_leaks(self):
         from gateway import access
@@ -102,21 +101,21 @@ class ChatTests(unittest.TestCase):
         self.assertEqual([row['user'] for row in history(456,456)], ['other private work'])
 
     def test_chat_command_enables_developer_tools_with_trusted_identity(self):
-        with patch('developer.session.workspace',return_value=Path(self.temp.name)),patch.object(chat, "run_codex", return_value={"response":"Hello"}) as run:
+        with patch('developer.session.workspace',return_value=Path(self.temp.name)),patch.object(chat, "run_app_server", return_value="Hello") as run:
             self.assertEqual(chat.model_reply("test",actor=123,chat_id=123), "Hello")
         args=run.call_args.args[0]
-        self.assertIn("features.shell_tool=false",args)
+        self.assertNotIn("features.shell_tool=false",args)
         self.assertNotIn('--sandbox',args)
         self.assertIn('default_permissions="developer"',args)
         self.assertIn('mcp_servers.developer.required=true',args)
 
     def test_current_model_matches_launch_arguments_and_tool_metadata(self):
         selected={'model':'gpt-6-luna','effort':'low'}
-        with patch('developer.session.workspace',return_value=Path(self.temp.name)),patch.object(chat,'run_codex',return_value={'response':'Hi'}) as run:
+        with patch('developer.session.workspace',return_value=Path(self.temp.name)),patch.object(chat,'run_app_server',return_value='Hi') as run:
             chat.model_reply('Which model?',actor=123,chat_id=123,model_options=selected)
-        args,prompt=run.call_args.args[:2]
-        self.assertEqual(args[args.index('--model')+1],selected['model'])
-        self.assertIn('model_reasoning_effort="low"',args)
+        args,environment,root,model,effort,prompt=run.call_args.args[:6]
+        self.assertEqual(model,selected['model'])
+        self.assertEqual(effort,'low')
         self.assertIn(json.dumps(selected),prompt)
         environment=next(value for value in args if value.startswith('mcp_servers.developer.env='))
         self.assertIn('AOF_MCP_MODEL="gpt-6-luna"',environment)

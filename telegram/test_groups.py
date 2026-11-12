@@ -41,7 +41,7 @@ class GroupTests(unittest.TestCase):
         for reply in (None,[],{'from':[]}):
             self.message('hello',reply=reply)
         self.assertEqual(self.db.execute('SELECT count(*) FROM inbox').fetchone()[0],1)
-        self.assertEqual(self.db.execute('SELECT text FROM inbox').fetchone()[0],'hello\nhello\nhello')
+        self.assertEqual(self.db.execute('SELECT text FROM inbox').fetchone()[0],'hello\n\nhello\n\nhello')
 
     def test_unknown_silent_viewer_can_chat_admin_commands_work_in_group(self):
         self.message('/status')

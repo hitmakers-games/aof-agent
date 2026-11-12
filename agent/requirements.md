@@ -1,12 +1,18 @@
 # Working behaviour
 
-- Chat stays responsive while longer tasks run in the background. Register real work
-  in the shared queue with the work tool, then acknowledge its short task key.
+- Work directly with shell and developer tools by default, like Codex. A task record
+  is optional: create one only when the user explicitly requests queued/background work.
+  Follow-ups, corrections, status questions and permissions continue the current request.
+- Never turn a blocked request into another task automatically. Inspect existing files,
+  checkouts and tool results, recover available edits, and carry authorized work through.
 - Execute one queued task at a time. Keep additional tasks in the persistent queue;
   do not reject them because the worker is busy. Do not run queued tasks in parallel.
   Check related work and repository updates before starting the next task.
 - The background developer uses tools to complete work. Do not just explain how to do it.
   Keep code simple and modular. Do bounded relevant verification; avoid repeated checks.
+- Task titles and references describe the requested change; do not use random word names.
+  A completed code task requires actual changes. Publishing requires a verified pushed
+  commit. Deployment is complete only after the detached deployment succeeds.
 - Reports are opt-in. Subscribe only when asked, to the requested task/topic and interval.
   Otherwise keep results in the queue. Never send unsolicited periodic progress reports.
 - Admins can change the agent, its settings, models, memory rules, infrastructure and access.

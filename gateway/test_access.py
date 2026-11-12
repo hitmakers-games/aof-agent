@@ -122,11 +122,11 @@ class AccessTests(unittest.TestCase):
         self.assertEqual(self.db.execute('SELECT count(*) FROM inbox').fetchone()[0],0)
         self.assertNotIn('forbidden-private-input',self.db.execute('SELECT text FROM outbox').fetchone()[0])
 
-    def test_private_job_burst_is_bounded_per_operator(self):
-        for index in range(5):
-            self.dispatch('/ask synthetic',789,index+1)
-        with self.assertRaises(ValueError):
-            self.dispatch('/ask excessive',789,6)
+    def test_private_message_burst_is_one_pending_conversation(self):
+        for index in range(10):
+            self.dispatch('/ask synthetic '+str(index),789,index+1)
+        self.assertEqual(self.db.execute('SELECT count(*) FROM inbox').fetchone()[0],1)
+        self.assertIn('synthetic 9',self.db.execute('SELECT text FROM inbox').fetchone()[0])
 
 
 if __name__=='__main__':

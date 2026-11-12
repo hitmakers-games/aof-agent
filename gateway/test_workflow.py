@@ -18,25 +18,27 @@ class WorkflowTests(unittest.TestCase):
         self.addCleanup(self.db.close)
         with self.db:
             put(self.db,'owner',123)
+            access.ensure_owner(self.db)
+            put(self.db,'watch:123','on')
             access.grant(self.db,123,456,'operator')
             access.grant(self.db,123,789,'viewer')
 
     def register(self,number=1,mode='ask'):
         with self.db,patch('gateway.notices.time.time',return_value=100):
-            return work.create(self.db,123,f'Task {number}','Details',mode=mode,shared=True)
+            return work.create(self.db,123,f'Task {number}','Details',mode=mode,shared=True,notify=True)
 
     def test_generated_task_alias_is_readable_unique_and_resolves_with_legacy_uuid(self):
         first=self.register()
         second=self.register(2)
-        self.assertRegex(first['issue_key'], r'^TG-(?:[a-z]+-){2}[a-z]+$')
+        self.assertEqual(first['issue_key'],'TG-task-1')
         self.assertNotEqual(first['issue_key'], second['issue_key'])
         self.assertEqual(work.get(self.db, first['issue_key'])['id'], first['id'])
         self.assertEqual(work.get(self.db, first['id'])['issue_key'], first['issue_key'])
 
-    def flush(self):
+    def flush(self,actor=123):
         notices.flush(self.db,131)
         row=self.db.execute('SELECT reply_markup,message_key FROM outbox ORDER BY id DESC LIMIT 1').fetchone()
-        with self.db:self.db.execute('INSERT INTO message_handles VALUES (?,?,?)',(123,row[1],42))
+        with self.db:self.db.execute('INSERT INTO message_handles VALUES (?,?,?)',(actor,row[1],42))
         return json.loads(row[0])['inline_keyboard'][0]
 
     def click(self,value,actor=123,now=132):
@@ -115,14 +117,16 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(self.db.execute('SELECT count(*) FROM outbox').fetchone()[0],2)
 
     def test_denied_batch_rolls_back_earlier_approvals(self):
-        first=self.register(1)
-        second=self.register(2)
-        start=self.flush()[0]['callback_data']
-        # Change visibility after the button was rendered, as if permissions changed.
+        with self.db,patch('gateway.notices.time.time',return_value=100):
+            put(self.db,'watch:123','off')
+            put(self.db,'watch:456','on')
+            work.create(self.db,456,'First','Details',shared=True,notify=True)
+            work.create(self.db,456,'Second','Details',shared=True,notify=True)
+        start=self.flush(actor=456)[0]['callback_data']
         ordered=self.db.execute('SELECT id FROM work_items ORDER BY id').fetchall()
         with self.db:
-            self.db.execute("UPDATE work_items SET visibility='private',requester_id=456 WHERE id=?",(ordered[-1][0],))
-            result=action(self.db,lambda:buttons.handle(self.db,123,start,42,132))
+            self.db.execute("UPDATE work_items SET visibility='private',requester_id=123 WHERE id=?",(ordered[-1][0],))
+            result=action(self.db,lambda:buttons.handle(self.db,456,start,42,132))
         self.assertIn('access denied',result)
         self.assertEqual(self.db.execute("SELECT count(*) FROM work_items WHERE state='queued'").fetchone()[0],0)
 

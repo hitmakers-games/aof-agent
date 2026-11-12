@@ -32,7 +32,7 @@ def dispatch(db, actor, head, argument):
         rev = work.revision(item['title'], description, repositories=json.loads(item['repositories']))
         db.execute('UPDATE work_items SET description=?,revision=? WHERE id=?', (description, rev, item['id']))
     elif head == '/retry':
-        if item['state'] not in {'failed', 'interrupted', 'cancelled', 'held'}:
+        if item['state'] not in {'failed', 'blocked', 'interrupted', 'cancelled', 'held'}:
             raise ValueError('Retry applies to failed, interrupted, held, or cancelled tasks.')
     else:
         raise ValueError('Unsupported coding command')

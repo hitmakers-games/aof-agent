@@ -49,13 +49,6 @@ def handle(db, update_id, message):
     from telegram.updates import action
     def command():
         access.require(db,actor,minimum(text))
-        # Keep bursts from one person in one pending turn; history retains every message.
-        if not head.startswith('/'):
-            pending=db.execute("SELECT update_id,text FROM inbox WHERE chat_id=? AND requested_by=? AND kind='message' AND status='queued' ORDER BY update_id DESC LIMIT 1"+getattr(db,'claim_lock',''),
-                (chat_id,actor)).fetchone()
-            if pending:
-                db.execute('UPDATE inbox SET text=? WHERE update_id=?',((pending[1]+'\n'+text)[-32000:],pending[0]))
-                return None
         if head in PRIVATE and not access.allowed(db,actor,'admin'):
             return 'Use this command in the private chat with @'+username+'.'
         if head in {'/tasks','/work'}:

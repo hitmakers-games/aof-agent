@@ -26,7 +26,10 @@ class GatewayTests(unittest.TestCase):
 
     def command(self, task_id, text):
         with self.db:
-            return commands.dispatch(self.db, task_id, text)
+            result=commands.dispatch(self.db, task_id, text)
+            # Batching timing is exercised in test_conversation.
+            self.db.execute("UPDATE settings SET value='0' WHERE key=?",("chat-ready:"+str(task_id),))
+            return result
 
     def test_commands_choose_explicit_targets_and_reject_injection(self):
         self.command(1, "/logs dev backend 5m")
@@ -49,16 +52,13 @@ class GatewayTests(unittest.TestCase):
         self.assertEqual(tasks.task(self.db, 1)["status"], "cancelled")
         self.assertNotIn("discarded", tasks.task(self.db, 1)["response"])
 
-    def test_tasks_shows_only_three_completed_chat_jobs_and_all_active_jobs(self):
+    def test_tasks_hides_transport_jobs_without_erasing_conversation_history(self):
         with self.db:
-            for uid in range(1, 7):
-                self.db.execute("INSERT INTO inbox(update_id,text,status,kind,chat_id,requested_by) VALUES (?,?,?,?,?,?)",
-                                (uid, f"request {uid}", "queued" if uid == 6 else "completed", "message", 123, 123))
-        listing = self.command(10, "/tasks")
-        history = listing.split("Your chat/diagnostic jobs:\n", 1)[1]
-        self.assertIn("#6: queued", history)
-        self.assertEqual(history.count(": completed"), 3)
-        self.assertNotIn("#1:", history)
+            self.db.execute("INSERT INTO inbox(update_id,text,status,kind,chat_id,requested_by) VALUES (1,'request','completed','message',123,123)")
+        listing=self.command(10,'/tasks')
+        self.assertNotIn('chat/diagnostic',listing)
+        self.assertNotIn('#1',listing)
+        self.assertEqual(self.db.execute('SELECT count(*) FROM inbox').fetchone()[0],1)
 
     def test_queued_cancel_prevents_claim_and_completed_cancel_does_not_reopen(self):
         self.command(1, "/ask queued")
