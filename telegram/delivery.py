@@ -38,11 +38,11 @@ def deliver_one(db, api):
                 if error.not_modified:
                     result, message_id = {}, previous[0]
                 elif error.code == 400:
-                    result = api.call('sendMessage', protect_content=True, **payload)
+                    result = api.call('sendMessage', **payload)
                 else:
                     raise
         else:
-            result = api.call('sendMessage', protect_content=True, **payload)
+            result = api.call('sendMessage', **payload)
         if isinstance(result, dict) and type(result.get('message_id')) is int:
             message_id = result['message_id']
     except TelegramError as error:
