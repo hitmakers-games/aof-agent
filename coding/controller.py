@@ -21,7 +21,8 @@ def process(db, item, app):
         if queue.cancelled(db, item):
             raise TaskCancelled('Cancelled before execution')
         client.request('/run', {'run_id': item['run_id'], 'task_id': item['id'], 'attempt': item['attempt'],
-                               'repositories': json.loads(item['repositories']), 'prompt': prompt.build(item)})
+                               'repositories': json.loads(item['repositories']), 'prompt': prompt.build(item),
+                               'model_options':item['model_options']})
         queue.checkpoint(db, item, 'Implementing and testing')
         deadline = time.monotonic() + 1860
         while True:

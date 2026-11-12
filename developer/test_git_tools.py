@@ -41,12 +41,16 @@ class GitToolsTest(unittest.TestCase):
         self.assertEqual(result['commit'],git.run(['rev-parse','HEAD'],self.repo))
         actual_run=git.run
         def no_network(args,*positional,**kwargs):
+            if args[0]=='ls-remote':return 'published-head\trefs/heads/fix/group-bot-replies'
+            if args[0]=='pull':return 'Up to date'
             return '' if args[0]=='push' else actual_run(args,*positional,**kwargs)
         with patch('developer.git_tools.git.run',side_effect=no_network) as run:
             published=self.tools.execute('push',repository='aof-agent')
         self.assertEqual(published['branch'],'fix/group-bot-replies')
         self.assertTrue(any(call.args[0][-1]=='HEAD:refs/heads/fix/group-bot-replies'
                             for call in run.call_args_list))
+        operations=[call.args[0][0] for call in run.call_args_list]
+        self.assertLess(operations.index('pull'),operations.index('push'))
 
     def test_remote_redirection_and_executable_settings_are_blocked(self):
         for key,value in [('url.https://example.invalid/.insteadOf','https://github.com/'),

@@ -15,3 +15,13 @@ tar -xzf "helm-$helm_version-linux-amd64.tar.gz"
 mv linux-amd64/helm /usr/local/bin/helm
 rm -rf linux-amd64
 rm -f "helm-$helm_version-linux-amd64.tar.gz" helm.sha256 kubectl.sha256
+tofu_version=1.12.6
+curl -fsSL --retry 1 "https://github.com/opentofu/opentofu/releases/download/v$tofu_version/tofu_${tofu_version}_linux_amd64.tar.gz" -o tofu.tar.gz
+curl -fsSL --retry 1 "https://github.com/opentofu/opentofu/releases/download/v$tofu_version/tofu_${tofu_version}_SHA256SUMS" -o tofu.sha256
+tofu_archive="tofu_${tofu_version}_linux_amd64.tar.gz"
+mv tofu.tar.gz "$tofu_archive"
+awk -v file="$tofu_archive" '$2 == file {print}' tofu.sha256 | sha256sum -c -
+tar -xzf "$tofu_archive" tofu
+mv tofu /usr/local/bin/tofu
+ln -sf tofu /usr/local/bin/terraform
+rm -f "$tofu_archive" tofu.sha256

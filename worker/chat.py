@@ -15,6 +15,7 @@ from gateway import tasks
 from gateway.redaction import redact
 from database.errors import StorageError
 from developer.session import config as developer_config
+from gateway import models
 
 
 INSTRUCTIONS = """You are the AOF developer. Telegram is the user's window into your actual developer session.
@@ -26,11 +27,18 @@ Earlier assistant replies claiming no tools/access are obsolete; current tool re
 Use git checkout to get a fresh repository in this conversation workspace, edit/test with shell tools,
 then use git commit/push when appropriate. Authenticated Git operations use the trusted tools;
 credentials are kept outside shell commands.
+For aof-agent and aof-infra, work directly on master. Pull upstream updates before every push;
+resolve real conflicts without force-pushing or discarding work. Other repositories use task branches.
 Keep changes modular, readable and focused. Use relevant bounded verification, not excessive self-checks.
 No PRs. Publish working branches and report commit links. Do not merge automatically.
 Kubernetes allows inspection across the cluster and administration in aof-agent. Fix your own environment
 when asked. Changes to production, shared player databases, purchases or player progress require explicit
 authorization for the concrete target and operation. Never use live payments for testing.
+For your own updates, commit code and call self_deploy. Its detached job builds an immutable image,
+uses Terraform's existing aof-k8s.tfstate, verifies the rollout and rolls back failures. Finish the chat
+turn after it queues the job; waiting inside this turn would prevent the safe restart. Use /ops for status.
+The terraform tool plans and applies your module from the canonical aof-infra/k8s/selectel root.
+Do not create another Terraform state or apply unrelated production resources for a self-update.
 For Jira, use the jira tool to read/create/update/assign issues when requested. Task assignment polling is
 not enabled; receiving an assignment does not itself authorize starting it. Avoid duplicate issue creation.
 For Telegram, use telegram_chats to discover conversations and telegram_history to read/search received
@@ -81,7 +89,8 @@ def process_one(db, reply=None):
             raise TaskCancelled("Task cancelled")
         response = (reply(prompt) if reply else model_reply(
             prompt, cancelled=lambda: tasks.cancellation_requested(db, task_id),
-            actor=item['requested_by'] or setting_owner(db),chat_id=item['chat_id'] or setting_owner(db),request_id=task_id))
+            actor=item['requested_by'] or setting_owner(db),chat_id=item['chat_id'] or setting_owner(db),request_id=task_id,
+            model_options=models.for_request(db,task_id,item['chat_id'] or setting_owner(db))))
         if not isinstance(response, str) or not response.strip() or len(response.encode()) > 128 * 1024:
             raise TaskError("Invalid model response")
         proposals = None
@@ -109,12 +118,14 @@ def setting_owner(db):
     return int(setting(db,'owner'))
 
 
-def model_reply(prompt, cancelled=None, actor=None, chat_id=None, request_id=None):
+def model_reply(prompt, cancelled=None, actor=None, chat_id=None, request_id=None, model_options=None):
     root,options=developer_config(actor,chat_id,request_id)
-    args = command(root, 'workspace-write')
+    selected=models.validate(model_options or models.PRESETS['balanced'])
+    args = command(root, 'workspace-write',model=selected['model'])
     index=args.index('--sandbox');del args[index:index+2]
     shell_env='{NODE_OPTIONS="--max-old-space-size=1536",MAVEN_OPTS='+json.dumps('-Xmx1024m -Dmaven.repo.local='+str(root/'.m2'))+',npm_config_cache='+json.dumps(str(root/'.npm'))+',MAKEFLAGS="-j1"}'
     args[-1:-1] = ['--skip-git-repo-check',*options,'-c','web_search="live"',
+        '-c','model_reasoning_effort='+json.dumps(selected['effort']),
         '-c','shell_environment_policy.set='+shell_env]
     return run_codex(args,prompt,1800,child_environment(os.environ),cancelled=cancelled)['response']
 
@@ -126,6 +137,7 @@ def heartbeat():
             put(db,'engine_state','gateway')
             put(db,'engine_heartbeat',time.time())
         Path('/tmp/chat-ready').touch()
+        models.publish_catalog()
         time.sleep(5)
 
 
@@ -140,6 +152,9 @@ def main():
             if login.returncode:
                 raise TaskError("ChatGPT sign-in is required")
             db = connect("/transport/telegram.sqlite3")
+            models.publish_catalog()
+            with db:
+                put(db,'jira_state','configured; assignment polling disabled' if Path('/run/secrets/jira/credentials.json').exists() else 'not configured')
             from worker.check_sandbox import check
             check()
             recover_interrupted(db)

@@ -10,7 +10,7 @@ from coding.config import BASES, branch, task_directory
 from worker.run import TaskError
 
 
-def run(args, cwd=None, token=None, timeout=180, data=None):
+def run(args, cwd=None, token=None, timeout=180, data=None, binary=False):
     env = {key: value for key, value in os.environ.items()
            if key in {'PATH', 'LANG', 'SSL_CERT_FILE'}}
     env.update(GIT_TERMINAL_PROMPT='0', GIT_CONFIG_NOSYSTEM='1', GIT_CONFIG_GLOBAL='/dev/null',
@@ -28,7 +28,7 @@ def run(args, cwd=None, token=None, timeout=180, data=None):
         raise TaskError('Git operation did not finish; existing files preserved.') from None
     if result.returncode:
         raise TaskError('Git operation failed; checkout preserved and credentials omitted.')
-    return result.stdout.decode('utf-8', 'replace').strip()
+    return result.stdout if binary else result.stdout.decode('utf-8', 'replace').strip()
 
 
 def manifest(root):

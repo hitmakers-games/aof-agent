@@ -8,6 +8,7 @@ from coding.config import BASES
 from coding import git
 from coding.publish import SECRET
 from repositories.github_app import GitHubApp,NoRedirects
+from worker.run import TaskError
 
 
 def validate_checkout(path,remote):
@@ -51,8 +52,8 @@ class Repositories:
         path=self.root/repository
         record=json.loads(self.records.read_text()) if self.records.exists() else {}
         remote=f'https://github.com/hitmakers-games/{repository}.git'
-        requested_branch=branch
-        branch=branch or 'agent/'+self.root.name
+        requested_branch=branch or ('master' if repository in {'aof-agent','aof-infra'} and action=='checkout' else None)
+        branch=branch or ('master' if repository in {'aof-agent','aof-infra'} else 'agent/'+self.root.name)
         git.run(['check-ref-format','--branch',branch])
         if action=='checkout' and not path.exists():
             token=self.app.token(repository)
@@ -86,6 +87,8 @@ class Repositories:
             self.records.write_text(json.dumps(record))
         branch=saved['branch']
         if action in {'checkout','status'}:
+            if action=='checkout' and not git.run(['status','--porcelain'],path):
+                self.pull(path,remote,branch,repository)
             return {'path':str(path),'branch':git.run(['branch','--show-current'],path),'status':git.run(['status','--short'],path)}
         if action=='diff':return {'diff':git.run(['diff','HEAD'],path)[:48000]}
         if action=='log':return {'log':git.run(['log','-10','--oneline'],path)}
@@ -105,9 +108,22 @@ class Repositories:
             return {'commit':git.run(['rev-parse','HEAD'],path)}
         if action=='push':
             if git.run(['branch','--show-current'],path)!=branch:raise ValueError('Push the dedicated working branch.')
+            self.pull(path,remote,branch,repository)
             workflows=path/'.github/workflows'
             if workflows.exists() and any(workflows.glob('*.y*ml')) and not deployment_reviewed:
                 raise ValueError('Inspect workflow triggers first, then set deployment_reviewed=true if publishing this working branch is authorized. Production deployments still need explicit authorization.')
             git.run(['push',remote,'HEAD:refs/heads/'+branch],path,self.app.token(repository,permissions={'contents':'write'}))
             return {'branch':branch,'commit_url':f'https://github.com/hitmakers-games/{repository}/commit/'+git.run(['rev-parse','HEAD'],path),'pull_request_created':False}
         raise ValueError('Unknown Git action')
+
+    def pull(self,path,remote,branch,repository):
+        token=self.app.token(repository)
+        if not git.run(['ls-remote','--heads',remote,'refs/heads/'+branch],token=token):
+            return
+        try:
+            git.run(['pull','--no-rebase','--no-edit','origin',branch],path,token)
+        except TaskError:
+            conflicts=git.run(['diff','--name-only','--diff-filter=U'],path)
+            if conflicts:
+                raise ValueError('Upstream changes conflict with this checkout. Resolve and commit the conflicts before pushing; no work was discarded.') from None
+            raise

@@ -17,7 +17,7 @@ def task(db, task_id, lock=False):
     return dict(zip([c[0] for c in cursor.description], row)) if row else None
 
 
-def enqueue(db, update_id, text, kind="message", target=None, component="backend", window=15, actor=None, context=None, chat_id=None):
+def enqueue(db, update_id, text, kind="message", target=None, component="backend", window=15, actor=None, context=None, chat_id=None, model_options=None):
     actor = actor if actor is not None else setting(db, 'owner')
     actor = int(actor) if actor is not None else None
     if actor is not None:
@@ -31,13 +31,17 @@ def enqueue(db, update_id, text, kind="message", target=None, component="backend
     db.execute("""INSERT INTO inbox(update_id,text,status,kind,target,component,"window",checkpoint,chat_id,requested_by,context)
                   VALUES (?,?,'queued',?,?,?,?, 'Waiting for a worker',?,?,?)""",
                (update_id, text, kind, target, component, window, chat_id or actor, actor, context))
+    from gateway.models import snapshot
+    snapshot(db, update_id, chat_id or actor, model_options)
     worker_online = time.time() - float(setting(db, "engine_heartbeat", "0")) < 180
-    if kind != "message" or count or not worker_online:
+    if kind != "message" or count or not worker_online or setting(db,'self_deploy',''):
         queue_report(db, f"Received #{update_id}: {kind}" + (f" on {target}" if target else "") +
                      f". Use /status {update_id} or /cancel {update_id} in private chat.", chat_id or actor,authorized_by=actor)
 
 
 def claim(db, worker):
+    if worker=='model' and setting(db,'self_deploy',''):
+        return None
     if worker == "model":
         condition = "(kind IN ('message','task','bug') OR (kind='analyze' AND context IS NOT NULL))"
     elif worker == "operations":

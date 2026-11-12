@@ -7,7 +7,7 @@ from telegram.storage import setting, put
 
 STANDS = {'dev': 'aof-dev', 'feature': 'aof-feature', 'release': 'aof-release'}
 COMPONENTS = {'backend': 'aof-back', 'frontend': 'frontend-gateway'}
-VIEWER = {'/start', '/help', '/whoami', '/status', '/tasks', '/work'}
+VIEWER = {'/start', '/help', '/whoami', '/status', '/tasks', '/work', '/ops'}
 ADMIN = {'/grant', '/revoke', '/users', '/autostart', '/pause', '/resume', '/coding'}
 
 
@@ -19,6 +19,7 @@ def minimum(text):
 def help_text(db, actor):
     text = 'Developer gateway\n/whoami — your numeric ID and role\n/status [task] — availability/status\n/work or /tasks — assignments'
     if access.allowed(db, actor, 'operator'):
+        text += '\n/models; /model name [reasoning]; /reasoning level\n/mode fast|balanced|smart — this chat\n/fast message; /smart message — one request'
         text += '''\nPlain text or /ask — private conversation
 /task description — shared assignment, awaiting approval by default
 /task-run description — explicitly register and queue an assignment
@@ -65,6 +66,17 @@ def dispatch(db, update_id, text, actor=None, context=None, chat_id=None):
         return access.command(db, actor, head, argument)
     if head in {'/start','/help'}:
         return help_text(db, actor)
+    if head in {'/models','/model','/reasoning','/mode'}:
+        from gateway.models import command
+        return command(db, actor, chat_id or actor, head, argument)
+    if head=='/ops':
+        import json
+        reference=argument or setting(db,'latest_operation','')
+        if not reference:return 'No self-deployment or Terraform operations yet.'
+        from operations.client import directory
+        directory(reference)
+        state=json.loads(setting(db,'operation:'+reference,'{}'))
+        return reference+'\n'+json.dumps(state,ensure_ascii=False)
     if head in {'/tasks','/work'}:
         text = work.listing(db, actor)
         if access.allowed(db, actor, 'operator'):
@@ -129,6 +141,8 @@ def dispatch(db, update_id, text, actor=None, context=None, chat_id=None):
             argument = first[1] if len(first)>1 else ''
         mode='auto' if setting(db,'autostart','off')=='on' else 'ask'
         item = work.create(db,actor,argument[:500],argument,mode=mode,shared=True,repositories=names)
+        from gateway.models import snapshot
+        snapshot(db,item['id'],chat_id or actor)
         if head=='/task-run':
             work.approve(db,actor,item['id'],item['revision'])
             return f"Registered {item['issue_key'] or item['id']}. Queued; waiting for an available coding worker."
@@ -164,11 +178,13 @@ def dispatch(db, update_id, text, actor=None, context=None, chat_id=None):
     if head == '/draft':
         from gateway import drafts
         return drafts.describe(db,actor,argument)
-    if not head.startswith('/') or head in {'/ask','/bug'}:
+    if not head.startswith('/') or head in {'/ask','/bug','/fast','/smart'}:
         value = text if not head.startswith('/') else argument
         if not value.strip():
             raise ValueError('Please include a message.')
-        tasks.enqueue(db,update_id,value,kind='bug' if head=='/bug' else 'message',actor=actor,context=context,chat_id=chat_id)
+        from gateway.models import PRESETS
+        override=PRESETS.get(head[1:]) if head in {'/fast','/smart'} else None
+        tasks.enqueue(db,update_id,value,kind='bug' if head=='/bug' else 'message',actor=actor,context=context,chat_id=chat_id,model_options=override)
         return None
     if head in {'/health','/changes','/logs','/analyze'}:
         args=argument.split()

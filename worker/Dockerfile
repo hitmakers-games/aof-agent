@@ -16,6 +16,7 @@ COPY worker/install-tools.sh /opt/aof-agent/worker/install-tools.sh
 RUN sh /opt/aof-agent/worker/install-tools.sh
 
 COPY database/developer.sql database/errors.py database/postgres.py database/migrate.py database/upgrade.py database/schema.sql database/schema_v2.sql database/gateway.sql database/coding.sql /opt/aof-agent/database/
+COPY operations/kube.py operations/archive.py operations/jobs.py operations/client.py operations/terraform.py operations/runner.py operations/recovery.py /opt/aof-agent/operations/
 COPY developer/session.py developer/git_tools.py developer/jira.py developer/kubernetes.py developer/effects.py developer/server.py /opt/aof-agent/developer/
 COPY worker/requirements.toml /etc/codex/requirements.toml
 COPY coding/sandbox.py coding/config.py coding/queue.py coding/prompt.py coding/git.py coding/askpass.sh coding/publish.py coding/client.py coding/executor.py coding/controller.py coding/commands.py coding/verify.py coding/result.schema.json /opt/aof-agent/coding/
@@ -23,7 +24,7 @@ COPY repositories/github_app.py repositories/credential.py repositories/bootstra
 COPY vpn/proxy.py /opt/aof-agent/vpn/
 COPY worker/run.py worker/chat.py worker/check_sandbox.py /opt/aof-agent/worker/
 COPY telegram/history.py telegram/groups.py telegram/bot.py telegram/api.py telegram/storage.py telegram/updates.py telegram/delivery.py /opt/aof-agent/telegram/
-COPY gateway/commands.py gateway/tasks.py gateway/redaction.py gateway/kubernetes.py gateway/diagnostics.py gateway/observer.py gateway/access.py gateway/work.py gateway/buttons.py gateway/notices.py gateway/drafts.py gateway/discussion.py gateway/coordinator.py /opt/aof-agent/gateway/
+COPY gateway/models.py gateway/commands.py gateway/tasks.py gateway/redaction.py gateway/kubernetes.py gateway/diagnostics.py gateway/observer.py gateway/access.py gateway/work.py gateway/buttons.py gateway/notices.py gateway/drafts.py gateway/discussion.py gateway/coordinator.py /opt/aof-agent/gateway/
 
 ENV HOME=/home/agent CODEX_HOME=/state/auth PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PYTHONPATH=/opt/aof-agent
 RUN chmod 755 /opt/aof-agent/coding/askpass.sh

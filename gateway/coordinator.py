@@ -1,4 +1,4 @@
-"""Persist task notifications independently of the model; Jira/coding are deferred."""
+"""Deliver task notifications and recover detached operations independently."""
 import fcntl
 import os
 from pathlib import Path
@@ -18,11 +18,15 @@ def main():
         db=connect('/transport/telegram.sqlite3')
         with db:
             access.ensure_owner(db)
-            put(db,'jira_state','not configured (deferred)')
-        print('Task coordinator ready; coding execution disabled',flush=True)
+        print('Task coordinator ready',flush=True)
         while True:
             now=time.time()
             notices.flush(db,now)
+            try:
+                from operations.recovery import recover
+                recover(db)
+            except (ValueError,OSError,StorageError):
+                print('Operation recovery will retry; credentials omitted.',flush=True)
             with db:
                 put(db,'coordinator_heartbeat',now)
             Path('/tmp/coordinator-ready').touch()

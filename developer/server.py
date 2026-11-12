@@ -22,6 +22,8 @@ def schema(properties,required=()):
 STRING={'type':'string'}
 TOOLS=[
     {'name':'capabilities','description':'Read actual developer identity and connected capabilities. Use before claiming missing access.','inputSchema':schema({})},
+    {'name':'self_deploy','description':'Build and deploy committed aof-agent code in a detached job, with rollback and Telegram reporting. Defaults to master; branch selects another committed app branch. It pulls and publishes clean checkouts first. Start returns immediately; acknowledge the queued job and finish the chat turn so it can restart this pod. Use status or /ops for progress.','inputSchema':schema({'action':{'type':'string','enum':['start','status']},'operation_id':STRING,'branch':STRING,'dockerfile':{'type':'string','enum':['worker/app.Dockerfile','worker/Dockerfile']}},['action'])},
+    {'name':'terraform','description':'Plan/apply the agent module from aof-infra/k8s/selectel using the EXISTING company S3 state aof-k8s.tfstate and remote locking. Plan snapshots committed source; apply takes that saved operation_id. Destructive or unrelated changes are stopped. Runs outside this conversation and reports to Telegram.','inputSchema':schema({'action':{'type':'string','enum':['plan','apply','status']},'operation_id':STRING},['action'])},
     {'name':'git','description':'List/checkout corporate repositories, inspect diff/log/status, fetch, commit and push the working branch. Checkout accepts branch, for example a Jira task key. Existing edits are preserved. No PRs. Shell edits and tests use returned checkout paths. Set deployment_reviewed only after inspecting workflow triggers and verifying that the push is authorized.','inputSchema':schema({'action':{'type':'string','enum':['list','checkout','status','diff','log','fetch','commit','push']},'repository':STRING,'message':STRING,'branch':STRING,'deployment_reviewed':{'type':'boolean'}},['action'])},
     {'name':'jira','description':'Read/search/create/update/comment/assign/transition AOF Jira tasks; users searches assignable teammates. account_id=self assigns to this developer. Only create tasks when requested.','inputSchema':schema({'action':{'type':'string','enum':['myself','users','search','get','create','update','comment','assign','transitions','transition']},'issue':STRING,'query':STRING,'summary':STRING,'description':STRING,'account_id':STRING,'transition_id':STRING,'issue_type':STRING},['action'])},
     {'name':'kubernetes','description':'Inspect cluster workloads/logs and administer aof-agent: apply, patch, delete, scale, restart, or exec commands in its pods. Secrets are redacted. Production writes are protected.','inputSchema':schema({'action':{'type':'string','enum':['get','logs','apply','delete','patch','scale','restart','exec']},'namespace':STRING,'resource':STRING,'name':STRING,'manifest':{'type':'object','additionalProperties':True},'patch':{'type':'object','additionalProperties':True},'replicas':{'type':'integer','minimum':0,'maximum':5},'container':STRING,'tail':{'type':'integer','minimum':1,'maximum':300},'command':{'type':'array','items':STRING,'maxItems':40}},['action'])},
@@ -40,8 +42,17 @@ class Developer:
         if name=='capabilities':
             return {'role':access.role(self.db,self.actor),'workspace':str(workspace(self.actor,self.chat)),
                     'shell':'workspace edits and commands enabled','git':'all corporate repositories; working branch commits and pushes',
-                    'jira':'AOF read and write','kubernetes':'aof-agent read/write; cluster workload reads','telegram':'connected conversation history available','pull_requests':'disabled'}
-        if name=='git':
+                    'jira':'AOF read and write','kubernetes':'aof-agent read/write; cluster workload reads',
+                    'self_deployment':'detached build, Terraform apply, rollback and restart reporting',
+                    'terraform':'agent module in the existing aof-k8s.tfstate',
+                    'telegram':'connected conversation history available','pull_requests':'disabled'}
+        if name in {'self_deploy','terraform'}:
+            if args.get('action')!='status':access.require(self.db,self.actor,'admin')
+            from operations.client import execute
+            values=dict(args)
+            if name=='self_deploy' and values['action']=='start':values['action']='deploy'
+            result=execute(self.actor,self.chat,**values)
+        elif name=='git':
             if self.repositories is None:self.repositories=Repositories(workspace(self.actor,self.chat))
             result=self.repositories.execute(**args)
         elif name=='jira':

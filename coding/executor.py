@@ -20,9 +20,11 @@ class Execution:
         self.output = None
 
     def start(self, value):
-        if set(value) != {'run_id', 'task_id', 'attempt', 'repositories', 'prompt'}:
+        if set(value)-{'model_options'} != {'run_id', 'task_id', 'attempt', 'repositories', 'prompt'}:
             raise ValueError('Invalid request')
         root = task_directory(value['task_id'], value['attempt'])
+        from gateway.models import validate,PRESETS
+        value['model_options']=validate(value.get('model_options',PRESETS['balanced']))
         names = repositories(value['repositories'])
         if len(value['run_id']) != 32 or not isinstance(value['prompt'], str) or len(value['prompt'].encode()) > 128*1024:
             raise ValueError('Invalid request')
@@ -41,10 +43,11 @@ class Execution:
 
     def run(self, root, value):
         try:
-            args = command(root, 'workspace-write')
+            args = command(root, 'workspace-write',model=value['model_options']['model'])
             index=args.index('--sandbox')
             del args[index:index+2]
             args[-1:-1] = ['--skip-git-repo-check', '--output-schema', '/opt/aof-agent/coding/result.schema.json']
+            args[-1:-1] = ['-c','model_reasoning_effort='+json.dumps(value['model_options']['effort'])]
             shell_env = {'HTTPS_PROXY': 'http://aof-agent-coding-controller:8888',
                          'HTTP_PROXY': 'http://aof-agent-coding-controller:8888',
                          'NO_PROXY': 'localhost,127.0.0.1', 'NODE_OPTIONS': '--max-old-space-size=1536',

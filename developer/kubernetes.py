@@ -22,8 +22,8 @@ def clean(value):
 
 
 class Kubernetes:
-    def __init__(self):
-        self.kubeconfig=Path('/transport/developer-control/kubeconfig.json')
+    def __init__(self,config_path=None):
+        self.kubeconfig=Path(config_path or '/transport/developer-control/kubeconfig.json')
         self.kubeconfig.parent.mkdir(parents=True,exist_ok=True,mode=0o700)
         self.kubeconfig.write_text(json.dumps({'apiVersion':'v1','kind':'Config',
             'clusters':[{'name':'agent','cluster':{'server':'https://kubernetes.default.svc','certificate-authority':'/run/secrets/kubernetes/ca.crt'}}],
