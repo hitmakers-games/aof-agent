@@ -45,7 +45,7 @@ class Developer:
             if self.repositories is None:self.repositories=Repositories(workspace(self.actor,self.chat))
             result=self.repositories.execute(**args)
         elif name=='jira':
-            if self.jira is None:self.jira=Jira()
+            if self.jira is None:self.jira=Jira(self.db)
             if args.get('action') in {'create','comment'}:
                 from developer.effects import once
                 result=once(self.db,os.environ.get('AOF_MCP_REQUEST','0'),'jira.'+args['action'],args,lambda:self.jira.execute(**args))

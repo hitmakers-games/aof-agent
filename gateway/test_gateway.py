@@ -49,6 +49,30 @@ class GatewayTests(unittest.TestCase):
         self.assertEqual(tasks.task(self.db, 1)["status"], "cancelled")
         self.assertNotIn("discarded", tasks.task(self.db, 1)["response"])
 
+    def test_status_ignores_obsolete_jira_state_and_separates_polling(self):
+        put(self.db, 'jira_state', 'not configured (deferred)')
+        put(self.db, 'jira_configured', 1)
+        put(self.db, 'jira_last_request', time.time() - 600)
+        put(self.db, 'jira_last_outcome', 'successful')
+        status = self.command(10, '/status')
+        self.assertIn('configured for developer tools (read/write)', status)
+        self.assertIn('last API request successful, 600s ago', status)
+        self.assertIn('Jira assignment polling: off', status)
+        self.assertNotIn('deferred', status)
+        self.assertIn('unknown (no heartbeat)', status)
+
+    def test_status_shows_failed_requests_and_queue_breakdown(self):
+        put(self.db, 'jira_last_request', time.time())
+        put(self.db, 'jira_last_outcome', 'failed')
+        put(self.db, 'engine_heartbeat', time.time() - 200)
+        self.command(1, '/ask first')
+        tasks.claim(self.db, 'model')
+        self.command(2, '/ask second')
+        status = self.command(3, '/status')
+        self.assertIn('last API request failed', status)
+        self.assertIn('Developer: offline (heartbeat 200s ago)', status)
+        self.assertIn('Chat/diagnostic jobs: queued: 1; running: 1; cancelling: 0', status)
+
     def test_queued_cancel_prevents_claim_and_completed_cancel_does_not_reopen(self):
         self.command(1, "/ask queued")
         self.command(2, "/cancel 1")

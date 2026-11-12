@@ -1,4 +1,4 @@
-"""Persist task notifications independently of the model; Jira/coding are deferred."""
+"""Persist task notifications independently of the model."""
 import fcntl
 import os
 from pathlib import Path
@@ -18,8 +18,7 @@ def main():
         db=connect('/transport/telegram.sqlite3')
         with db:
             access.ensure_owner(db)
-            put(db,'jira_state','not configured (deferred)')
-        print('Task coordinator ready; coding execution disabled',flush=True)
+        print('Task coordinator ready',flush=True)
         while True:
             now=time.time()
             notices.flush(db,now)

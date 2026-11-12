@@ -15,7 +15,8 @@ def document(text):
 
 
 class Jira:
-    def __init__(self):
+    def __init__(self, db=None):
+        self.db = db
         self.config=json.loads(Path('/run/secrets/jira/credentials.json').read_text())
         c=self.config
         if c['tokenUrl']!='https://auth.atlassian.com/oauth/token' or c['apiBaseUrl']!='https://api.atlassian.com/ex/jira/'+c['cloudId']+'/rest/api/3':
@@ -24,7 +25,23 @@ class Jira:
         self.token=None
         self.expires=0
 
-    def request(self,path,body=None,method=None):
+    def request(self, path, body=None, method=None):
+        try:
+            result = self._request(path, body, method)
+        except Exception:
+            self.record_status('failed')
+            raise
+        self.record_status('successful')
+        return result
+
+    def record_status(self, outcome):
+        if self.db is not None:
+            from telegram.storage import put
+            with self.db:
+                put(self.db, 'jira_last_request', time.time())
+                put(self.db, 'jira_last_outcome', outcome)
+
+    def _request(self,path,body=None,method=None):
         try:
             if time.time()>self.expires:
                 data=urlencode({'client_id':self.config['clientId'],'client_secret':self.config['clientSecret'],'grant_type':'client_credentials'}).encode()

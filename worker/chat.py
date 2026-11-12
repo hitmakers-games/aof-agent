@@ -123,6 +123,7 @@ def heartbeat():
     db=connect('/transport/telegram.sqlite3')
     while True:
         with db:
+            put(db,'jira_configured',int(Path('/run/secrets/jira/credentials.json').is_file()))
             put(db,'engine_state','gateway')
             put(db,'engine_heartbeat',time.time())
         Path('/tmp/chat-ready').touch()

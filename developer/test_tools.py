@@ -78,6 +78,23 @@ class ToolsTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             once(self.db, 2, 'jira.create', {}, lambda: {'key': 'AOF-2'})
 
+    def test_jira_status_records_api_success_and_failure_without_error_details(self):
+        from unittest.mock import Mock
+        from developer.jira import Jira
+        from telegram.storage import setting
+        jira = Jira.__new__(Jira)
+        jira.db = self.db
+        jira._request = Mock(return_value={'accountId': 'private-account'})
+        self.assertEqual(jira.request('/myself'), {'accountId': 'private-account'})
+        self.assertEqual(setting(self.db, 'jira_last_outcome'), 'successful')
+        self.assertIsNotNone(setting(self.db, 'jira_last_request'))
+        jira._request.side_effect = OSError('private-error')
+        with self.assertRaises(OSError):
+            jira.request('/myself')
+        self.assertEqual(setting(self.db, 'jira_last_outcome'), 'failed')
+        self.assertNotIn('private-', str(self.db.execute(
+            "SELECT value FROM settings WHERE key LIKE 'jira_%'").fetchall()))
+
     def test_host_access_is_rejected_and_secret_values_are_hidden(self):
         with self.assertRaises(ValueError):
             Kubernetes.safe_workload({'spec': {'volumes': [{'hostPath': {'path': '/'}}]}})

@@ -79,23 +79,8 @@ def dispatch(db, update_id, text, actor=None, context=None, chat_id=None):
                 own_job(db, actor, argument)
                 return tasks.describe(db, identifier(argument))
             return work.describe(db, actor, argument)
-        age = time.time()-float(setting(db,'engine_heartbeat','0'))
-        ops_age = time.time()-float(setting(db,'operations_heartbeat','0'))
-        coordinator_age = time.time()-float(setting(db,'coordinator_heartbeat','0'))
-        coding_age = time.time()-float(setting(db,'coding_heartbeat','0'))
-        coding_state = ('online' if coding_age < 180 else 'offline') if setting(db,'coding_enabled','0')=='1' else 'not enabled'
-        active = db.execute("SELECT count(*) FROM inbox WHERE status IN ('queued','running','cancelling')").fetchone()[0]
-        coding_active=db.execute("SELECT count(*) FROM work_items WHERE state IN ('running','cancelling')").fetchone()[0]
-        result = (f"Developer: {'online' if age<180 else 'offline'}\nStand diagnostics: {'online' if ops_age<30 else 'offline'}\n"
-                f"Task coordinator: {'online' if coordinator_age<30 else 'offline'}\n"
-                f"Jira: {setting(db,'jira_state','not configured')}\nCoding worker: {coding_state}\n"
-                f"Auto-start: {setting(db,'autostart','off')}; paused: {setting(db,'paused','0')=='1'}\n"
-                + f'{active} active chat/diagnostic jobs; {coding_active} active coding tasks.')
-        if access.allowed(db,actor,'operator'):
-            own=db.execute("SELECT update_id,status FROM inbox WHERE (chat_id=? OR (chat_id IS NULL AND ?=?)) AND status IN ('queued','running','cancelling') LIMIT 5",
-                           (actor,str(actor),setting(db,'owner'))).fetchall()
-            result+=''.join(f'\n#{uid}: {state}' for uid,state in own)
-        return result
+        from gateway.status import describe
+        return describe(db, actor)
     if head == '/coding':
         if argument not in {'on','off'}:
             raise ValueError('Usage: /coding on|off')
