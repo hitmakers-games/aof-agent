@@ -104,6 +104,18 @@ class ChatTests(unittest.TestCase):
         self.assertIn('default_permissions="developer"',args)
         self.assertIn('mcp_servers.developer.required=true',args)
 
+    def test_current_model_matches_launch_arguments_and_tool_metadata(self):
+        selected={'model':'gpt-6-luna','effort':'low'}
+        with patch('developer.session.workspace',return_value=Path(self.temp.name)),patch.object(chat,'run_codex',return_value={'response':'Hi'}) as run:
+            chat.model_reply('Which model?',actor=123,chat_id=123,model_options=selected)
+        args,prompt=run.call_args.args[:2]
+        self.assertEqual(args[args.index('--model')+1],selected['model'])
+        self.assertIn('model_reasoning_effort="low"',args)
+        self.assertIn(json.dumps(selected),prompt)
+        environment=next(value for value in args if value.startswith('mcp_servers.developer.env='))
+        self.assertIn('AOF_MCP_MODEL="gpt-6-luna"',environment)
+        self.assertIn('AOF_MCP_REASONING="low"',environment)
+
     def test_additive_migration_preserves_existing_inbox(self):
         path=Path(self.temp.name)/"old.sqlite3"
         with sqlite3.connect(path) as db:

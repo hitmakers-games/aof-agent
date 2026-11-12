@@ -14,7 +14,7 @@ def workspace(actor, chat_id, work_id=None):
     return root
 
 
-def config(actor, chat_id, request_id=None, work_id=None):
+def config(actor, chat_id, request_id=None, work_id=None, model_options=None):
     root=workspace(actor,chat_id,work_id)
     rules={str(root):'write','/workspace':'deny','/run/secrets':'deny',
            '/transport':'deny','/state/auth/auth.json':'deny'}
@@ -22,6 +22,9 @@ def config(actor, chat_id, request_id=None, work_id=None):
     env={'AOF_MCP_ACTOR':str(actor),'AOF_MCP_CHAT':str(chat_id),'AOF_MCP_REQUEST':str(request_id or 0),
          'AOF_DATABASE_DSN_FILE':'/run/secrets/database/uri','AOF_DATABASE_CA_FILE':'/run/secrets/database/ca.crt',
          'AOF_MCP_WORK':work_id or ''}
+    if model_options:
+        env['AOF_MCP_MODEL']=model_options['model']
+        env['AOF_MCP_REASONING']=model_options['effort']
     env_table='{'+','.join(k+'='+json.dumps(v) for k,v in env.items())+'}'
     return root,['-c','default_permissions="developer"','-c','permissions.developer.extends=":workspace"',
         '-c','permissions.developer.filesystem='+table,'-c','permissions.developer.network.enabled=true',

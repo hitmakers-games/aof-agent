@@ -84,9 +84,11 @@ class Developer:
                     'active_tasks':self.db.execute("SELECT count(*) FROM work_items WHERE state IN ('queued','running','cancelling')").fetchone()[0]}
             return result
         if name=='capabilities':
+            runtime={'model':os.environ.get('AOF_MCP_MODEL'),'effort':os.environ.get('AOF_MCP_REASONING')}
             if not access.allowed(self.db,self.actor,'operator'):
-                return {'role':'viewer','tools':['health','work.list','work.status']}
+                return {'role':'viewer','runtime':runtime,'tools':['health','work.list','work.status']}
             return {'role':access.role(self.db,self.actor),'workspace':str(self.root),
+                    'runtime':runtime,
                     'work':'shared queue; background tasks; opt-in reports',
                     'shell':'workspace edits and commands enabled','git':'all corporate repositories; working branch commits and pushes',
                     'jira':'AOF read and write','kubernetes':'aof-agent read/write; cluster workload reads',

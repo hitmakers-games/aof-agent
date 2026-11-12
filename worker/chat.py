@@ -117,8 +117,12 @@ def setting_owner(db):
 
 
 def model_reply(prompt, cancelled=None, actor=None, chat_id=None, request_id=None, model_options=None, work_id=None):
-    root,options=developer_config(actor,chat_id,request_id,work_id)
     selected=models.validate(model_options or models.PRESETS['balanced'])
+    root,options=developer_config(actor,chat_id,request_id,work_id,selected)
+    prompt=('Runtime settings supplied by your launcher for THIS invocation: '+json.dumps(selected)+
+        '\nThese are the model and reasoning settings actually passed to Codex. Use them when asked '
+        'which model you are using. capabilities also reports them. The shared default may differ '
+        'after a one-request override or a settings change; report this invocation accurately.\n\n'+prompt)
     args = command(root, 'workspace-write',model=selected['model'])
     index=args.index('--sandbox');del args[index:index+2]
     shell_env='{NODE_OPTIONS="--max-old-space-size=768",MAVEN_OPTS='+json.dumps('-Xmx512m -Dmaven.repo.local='+str(root/'.m2'))+',npm_config_cache='+json.dumps(str(root/'.npm'))+',MAKEFLAGS="-j1"}'
