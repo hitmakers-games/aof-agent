@@ -33,6 +33,7 @@ class OutcomeTests(unittest.TestCase):
         git.run(['init','-q'],root)
         git.run(['config','user.name','Test'],root)
         git.run(['config','user.email','test@example.invalid'],root)
+        git.run(['remote','add','origin','https://github.com/hitmakers-games/aof-agent.git'],root)
         (root/'example.py').write_text('value=1\n')
         git.run(['add','example.py'],root);git.run(['commit','-qm','Initial'],root)
         artifacts.checkout(self.db,self.item['id'],'aof-agent',root)

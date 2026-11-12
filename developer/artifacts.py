@@ -23,6 +23,8 @@ def inspect(db, request):
     for key,value in db.execute('SELECT key,value FROM settings WHERE key LIKE ?',('checkout:'+str(request)+':%',)):
         before=json.loads(value)
         path=Path(before['path'])
+        from developer.git_tools import validate_checkout
+        validate_checkout(path,'https://github.com/hitmakers-games/'+before['repository']+'.git')
         head=git.run(['rev-parse','HEAD'],path)
         result.append({'repository':before['repository'],'path':str(path),'commit':head,
             'committed':head!=before['head'],'changed_files':git.changes(path),
