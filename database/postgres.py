@@ -91,6 +91,7 @@ def initialize(db):
         if db.execute("SELECT max(version) FROM schema_migrations").fetchone()[0] < 2:
             db.execute(Path(__file__).with_name("schema_v2.sql").read_text())
         db.execute(Path(__file__).with_name("gateway.sql").read_text())
+        db.execute("ALTER TABLE work_items ADD COLUMN IF NOT EXISTS deleted_at DOUBLE PRECISION")
         if db.execute("SELECT max(version) FROM schema_migrations").fetchone()[0] < 3:
             db.execute(Path(__file__).with_name("coding.sql").read_text())
         if db.execute("SELECT max(version) FROM schema_migrations").fetchone()[0] < 4:

@@ -43,4 +43,6 @@ def execute(db, actor, chat, action, reference=None, title=None, description='',
         db.execute('UPDATE work_items SET state=?,held=0,updated_at=? WHERE id=?',
             ('cancelling' if item['state']=='running' else 'cancelled',time.time(),item['id']))
         return {'task':item['issue_key'],'state':'cancellation requested'}
+    if action=='delete':
+        return work.delete(db,actor,reference)
     raise ValueError('Unknown work action')

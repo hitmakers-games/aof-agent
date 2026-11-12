@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from gateway import access, buttons, commands, notices, work
+from developer.work_tools import execute as execute_work
 from telegram.storage import connect, put
 from telegram.updates import action
 
@@ -124,6 +125,26 @@ class WorkflowTests(unittest.TestCase):
             result=action(self.db,lambda:buttons.handle(self.db,123,start,42,132))
         self.assertIn('access denied',result)
         self.assertEqual(self.db.execute("SELECT count(*) FROM work_items WHERE state='queued'").fetchone()[0],0)
+
+    def test_delete_only_hides_closed_local_queue_item_and_keeps_history(self):
+        item=self.register()
+        with self.db:self.db.execute("UPDATE work_items SET state='ready_for_review' WHERE id=?",(item['id'],))
+        result=execute_work(self.db,123,123,'delete',reference=item['issue_key'])
+        self.assertEqual(result,{'task':item['issue_key'],'state':'deleted'})
+        self.assertIsNotNone(work.get(self.db,item['id'])['deleted_at'])
+        self.assertNotIn(item['issue_key'],work.listing(self.db,123))
+        with self.assertRaisesRegex(ValueError,'Task not found'):
+            work.require_item(self.db,123,item['issue_key'])
+        self.assertEqual(self.db.execute("SELECT count(*) FROM audit_events WHERE entity=? AND action='work.deleted'",(item['id'],)).fetchone()[0],1)
+
+    def test_delete_rejects_running_and_restartable_items(self):
+        item=self.register()
+        for state in ('running','held','awaiting_approval','queued','cancelling'):
+            with self.subTest(state=state):
+                with self.db:self.db.execute('UPDATE work_items SET state=? WHERE id=?',(state,item['id']))
+                with self.assertRaisesRegex(ValueError,'Only closed tasks'):
+                    execute_work(self.db,123,123,'delete',reference=item['id'])
+        self.assertIsNone(work.get(self.db,item['id'])['deleted_at'])
 
 
 if __name__=='__main__':unittest.main()

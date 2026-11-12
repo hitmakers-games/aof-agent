@@ -34,7 +34,7 @@ def get(db, reference, lock=False):
 
 
 def visible(db, actor, item):
-    return bool(item and access.allowed(db, actor) and
+    return bool(item and item.get('deleted_at') is None and access.allowed(db, actor) and
                 (item['visibility'] == 'shared' or item['requester_id'] == actor or access.allowed(db,actor,'admin')))
 
 
@@ -132,11 +132,20 @@ def describe(db, actor, reference):
 
 def listing(db, actor, shared_only=False):
     rows = db.execute('''SELECT id,issue_key,state,visibility,requester_id,title,checkpoint FROM work_items
-                         ORDER BY created_at DESC LIMIT 100''').fetchall()
+                         WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT 100''').fetchall()
     return '\n'.join(f'{key or uid}: {state}'+(' — '+title[:90] if access.allowed(db,actor,'operator') else '')
                      +(f' ({checkpoint})' if state=='running' and checkpoint and access.allowed(db,actor,'operator') else '')
                      for uid, key, state, visibility, owner,title,checkpoint in rows
                      if visibility == 'shared' or (not shared_only and (owner == actor or access.allowed(db,actor,'admin'))))[:3500] or 'No assignments yet.'
+
+
+def delete(db, actor, reference):
+    item = require_item(db, actor, reference, 'operator', lock=True)
+    if item['state'] not in TERMINAL:
+        raise ValueError('Only closed tasks can be deleted. Cancel or finish the task first.')
+    db.execute('UPDATE work_items SET deleted_at=? WHERE id=? AND deleted_at IS NULL', (time.time(), item['id']))
+    access.audit(db, actor, 'work.deleted', item['id'], {'source': item['source']})
+    return {'task': item['issue_key'], 'state': 'deleted'}
 
 
 def amend(db, actor, reference, description):

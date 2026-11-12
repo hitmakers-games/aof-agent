@@ -61,7 +61,8 @@ def connect(path):
                 db.execute(statement)
         columns = {row[1] for row in db.execute('PRAGMA table_info(work_items)')}
         for name, definition in {'repositories': "TEXT NOT NULL DEFAULT '[]'", 'attempt': 'INTEGER NOT NULL DEFAULT 0',
-                                 'result': 'TEXT', 'pull_requests': "TEXT NOT NULL DEFAULT '[]'", 'checkpoint': 'TEXT'}.items():
+                                 'result': 'TEXT', 'pull_requests': "TEXT NOT NULL DEFAULT '[]'", 'checkpoint': 'TEXT',
+                                 'deleted_at': 'DOUBLE PRECISION'}.items():
             if name not in columns:
                 db.execute(f'ALTER TABLE work_items ADD COLUMN {name} {definition}')
         db.execute('''CREATE TABLE IF NOT EXISTS coding_runs (id TEXT PRIMARY KEY,
