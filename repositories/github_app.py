@@ -5,7 +5,7 @@ from pathlib import Path
 import subprocess
 import time
 from urllib.error import HTTPError, URLError
-from urllib.request import HTTPRedirectHandler, Request, build_opener
+from urllib.request import HTTPRedirectHandler, Request, build_opener, ProxyHandler
 
 
 class AccessError(Exception):
@@ -28,7 +28,7 @@ class GitHubApp:
         self.app_id = int((directory / "app-id").read_text().strip())
         self.installation_id = int((directory / "installation-id").read_text().strip())
         self.organization = organization
-        self.opener = build_opener(NoRedirects())
+        self.opener = build_opener(ProxyHandler({}), NoRedirects())
 
     def jwt(self):
         now = int(time.time())
