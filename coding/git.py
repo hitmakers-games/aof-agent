@@ -20,6 +20,7 @@ def run(args, cwd=None, token=None, timeout=180, data=None):
         env['GIT_ASKPASS'] = '/opt/aof-agent/coding/askpass.sh'
     command = ['git', '-c', 'credential.helper=', '-c', 'core.hooksPath=/dev/null',
                '-c', 'core.fsmonitor=false', '-c', 'http.followRedirects=false',
+               '-c', 'commit.gpgsign=false', '-c', 'tag.gpgsign=false',
                '-c', 'pack.threads=1', '-c', 'index.threads=1', *args]
     try:
         result = subprocess.run(command, cwd=cwd, env=env, capture_output=True, timeout=timeout, input=data)
