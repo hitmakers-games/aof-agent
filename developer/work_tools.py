@@ -1,10 +1,35 @@
 """Small trusted interface to the one durable work queue."""
 import json
+import re
 import hashlib
 import time
 
 from gateway import access, models, work, subscriptions
 from telegram.storage import put
+
+
+GENERIC_TITLES = {
+    'task', 'new task', 'follow up', 'follow-up', 'work', 'request',
+}
+
+
+def task_title(title, description):
+    """Keep queue titles specific; infer a short action when a caller omitted one."""
+    candidate = title.strip() if isinstance(title, str) else ''
+    if candidate and len(candidate) <= 120 and candidate.casefold() not in GENERIC_TITLES:
+        return candidate
+    request = description.strip()
+    # Requests are often written as an imperative. Use one concise action phrase,
+    # rather than blindly copying the first N characters of a long prompt.
+    first = re.split(r'(?<=[.!?])\s+|\n', request, maxsplit=1)[0].strip()
+    first = re.sub(r'^(please\s+)?(can you|could you|would you|please)\s+', '', first, flags=re.I)
+    first = re.sub(r'\s+', ' ', first).strip(' .!?')
+    if not first:
+        return 'Clarify requested change'
+    words = first.split()
+    if len(words) > 12:
+        first = ' '.join(words[:12]).rstrip(',;:')
+    return first[:120].rstrip(' ,;:') or 'Clarify requested change'
 
 
 def execute(db, actor, chat, action, reference=None, title=None, description='', repositories=None,
@@ -23,6 +48,8 @@ def execute(db, actor, chat, action, reference=None, title=None, description='',
     if action in {'watch','unwatch'}:
         return subscriptions.watch(db,actor,chat,reference or topic,action=='watch',minutes,events)
     if action=='start':
+        if not reference:
+            title=task_title(title, description)
         expected=delivery or ('changes' if repositories else 'answer')
         if expected not in {'answer','changes','published','deployed'}:raise ValueError('Invalid expected result')
         origin=None

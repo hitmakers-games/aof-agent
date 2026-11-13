@@ -5,7 +5,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from gateway import access, buttons, commands, notices, work
-from developer.work_tools import execute as execute_work
+from developer.work_tools import execute as execute_work, task_title
 from telegram.storage import connect, put
 from telegram.updates import action
 
@@ -34,6 +34,23 @@ class WorkflowTests(unittest.TestCase):
         self.assertNotEqual(first['issue_key'], second['issue_key'])
         self.assertEqual(work.get(self.db, first['issue_key'])['id'], first['id'])
         self.assertEqual(work.get(self.db, first['id'])['issue_key'], first['issue_key'])
+
+    def test_queue_title_fallback_uses_request_and_rejects_generic_section_heading(self):
+        request='Remove chat and diagnostic jobs section from the admin dashboard. Keep the work queue.'
+        self.assertEqual(task_title('', request), 'Remove chat and diagnostic jobs section from the admin dashboard')
+        self.assertEqual(task_title('New task', request),
+                         'Remove chat and diagnostic jobs section from the admin dashboard')
+        self.assertEqual(task_title('Improve task naming', request), 'Improve task naming')
+
+    def test_start_uses_specific_fallback_and_reference_follow_up_keeps_title(self):
+        request='Fix task titles so they describe the requested change in plain, specific language.'
+        with patch('gateway.models.snapshot'), self.db:
+            result=execute_work(self.db,123,123,'start',title='New task',description=request)
+        item=work.get(self.db,result['task'])
+        self.assertEqual(item['title'], 'Fix task titles so they describe the requested change in plain, specific')
+        with patch('gateway.models.snapshot'), self.db:
+            execute_work(self.db,123,123,'start',reference=item['issue_key'],description='Also cover rapid follow-ups.')
+        self.assertEqual(work.get(self.db,item['id'])['title'], item['title'])
 
     def flush(self,actor=123):
         notices.flush(self.db,131)
