@@ -1,6 +1,7 @@
 """Telegram HTTP client. Never log exception URLs: they contain the token."""
 import json
 import re
+import uuid
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -19,11 +20,24 @@ class Telegram:
             raise ValueError("Invalid Telegram token format")
         self.token = token
 
-    def call(self, method, _timeout=40, **payload):
+    def call(self, method, _timeout=40, _upload=None, **payload):
+        body=json.dumps(payload).encode()
+        content_type="application/json"
+        if _upload is not None:
+            field,filename,content=_upload
+            boundary=uuid.uuid4().hex
+            filename=re.sub(r'[^A-Za-z0-9._-]',"_",filename)[:200]
+            parts=[]
+            for key,value in payload.items():
+                parts.append((f'--{boundary}\r\nContent-Disposition: form-data; name="{key}"\r\n\r\n{value}\r\n').encode())
+            parts.append((f'--{boundary}\r\nContent-Disposition: form-data; name="{field}"; filename="{filename}"\r\nContent-Type: application/octet-stream\r\n\r\n').encode()+content+b"\r\n")
+            parts.append((f"--{boundary}--\r\n").encode())
+            body=b"".join(parts)
+            content_type="multipart/form-data; boundary="+boundary
         request = Request(
             f"https://api.telegram.org/bot{self.token}/{method}",
-            data=json.dumps(payload).encode(),
-            headers={"Content-Type": "application/json"},
+            data=body,
+            headers={"Content-Type": content_type},
         )
         try:
             with urlopen(request, timeout=_timeout) as response:
