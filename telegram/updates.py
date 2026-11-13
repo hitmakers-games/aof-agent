@@ -59,6 +59,8 @@ def handle_update(db, update, pairing_code, pairing_expires_at, now=None):
             if 'edited_message' in update:
                 put(db,'offset',update_id+1)
                 return None
+            if isinstance(message,dict) and type(message.get('message_id')) is int:
+                put(db,'telegram-source:'+str(update_id),message['message_id'])
             from telegram.groups import handle
             if isinstance(message,dict) and handle(db,update_id,message):
                 record(db,message)

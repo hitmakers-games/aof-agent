@@ -79,4 +79,40 @@ class GroupTests(unittest.TestCase):
 
 
 
-if __name__=='__main__':unittest.main()
+
+    def test_silent_and_reaction_responses_do_not_send_text_or_typing(self):
+        from telegram.bot import refresh_typing
+        self.message('Thanks')
+        request=self.number
+        with self.db:
+            put(self.db,'telegram-source:'+str(request),55)
+            put(self.db,'engine_state','gateway')
+            import time
+            put(self.db,'engine_heartbeat',time.time())
+        api=Mock()
+        refresh_typing(self.db,api)
+        api.call.assert_not_called()
+        tasks.finish(self.db,request,'[[REACT:👍]]')
+        self.assertTrue(deliver_one(self.db,api))
+        api.call.assert_called_once_with('setMessageReaction',chat_id=-900,message_id=55,
+            reaction=[{'type':'emoji','emoji':'👍'}],is_big=False)
+        self.message('A note to myself')
+        tasks.finish(self.db,self.number,'[[SILENT]]')
+        self.assertFalse(deliver_one(self.db,api))
+
+    def test_disabled_reactions_do_not_block_delivery_and_revocation_prevents_them(self):
+        from telegram.api import TelegramError
+        self.message('Thanks',actor=456)
+        with self.db:put(self.db,'telegram-source:'+str(self.number),56)
+        tasks.finish(self.db,self.number,'[[REACT:🙏]]')
+        api=Mock()
+        api.call.side_effect=TelegramError(400)
+        self.assertTrue(deliver_one(self.db,api))
+        self.assertFalse(deliver_one(self.db,api))
+        self.message('Thanks again',actor=456)
+        with self.db:put(self.db,'telegram-source:'+str(self.number),57)
+        tasks.finish(self.db,self.number,'[[REACT:👍]]')
+        with self.db:access.revoke(self.db,123,456)
+        api.reset_mock()
+        self.assertTrue(deliver_one(self.db,api))
+        api.call.assert_not_called()

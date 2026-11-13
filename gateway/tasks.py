@@ -132,6 +132,14 @@ def finish(db, task_id, response, status="completed", proposals=None):
         from gateway.conversation import finish as finish_followups
         finish_followups(db,task_id,response,status)
         text = response if item["kind"] == "message" and status == "completed" else f"#{task_id} — {status}\n{response}"
+        from telegram.reactions import emoji_for
+        emoji = emoji_for(response) if status=='completed' and item['kind']=='message' else None
+        source = setting(db,'telegram-source:'+str(task_id))
+        if emoji:
+            if source and not setting(db,'chat-parent:'+str(task_id)):
+                queue_report(db, response.strip(), item['chat_id'], authorized_by=item['requested_by'],
+                             required_role='viewer', reply_markup={'aof_reaction':emoji,'message_id':int(source)})
+            return
         if response.strip()=='[[SILENT]]' and status=='completed':
             return
         if setting(db,'chat-parent:'+str(task_id)):

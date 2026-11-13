@@ -47,10 +47,9 @@ def refresh_typing(db, api, next_refresh=0, now=None):
             continue
         if int(actor)>0 and not access.allowed(db,int(actor),'viewer'):
             continue
+        # Reading a group message is not a commitment to reply.
         if int(actor)<0:
-            from telegram.groups import enabled
-            if not enabled(db,int(actor)):
-                continue
+            continue
         try:
             api.call('sendChatAction',chat_id=int(actor),action='typing',_timeout=3)
         except TelegramError as error:

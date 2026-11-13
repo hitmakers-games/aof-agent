@@ -88,3 +88,11 @@ PostgreSQL integration tests require their explicitly designated disposable test
 database; never point them at the live service. A successful test run or pushed
 commit does not prove deployment. Deployment is a separate, explicitly authorized
 operation and completes only when its detached result succeeds.
+
+Group conversations choose text, a sparse reaction, or silence. Queued/running group
+messages never trigger typing; text delivery emits typing only once text is ready.
+Reaction-only model responses use `[[REACT:👍]]` (see `telegram/reactions.py`). The
+original Telegram message ID is retained in PostgreSQL settings as
+`telegram-source:<update_id>`; batched responses react to the original request.
+Reactions reuse the durable outbox and its recipient permission checks, require no
+schema migration, and skip unavailable reactions without sending fallback chatter.

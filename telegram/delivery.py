@@ -23,6 +23,22 @@ def deliver_one(db, api):
             db.execute('UPDATE outbox SET delivered=1 WHERE id=?', (report_id,))
         return True
     markup = json.loads(markup) if markup else None
+    if markup and 'aof_reaction' in markup:
+        try:
+            api.call('setMessageReaction',chat_id=actor,message_id=markup['message_id'],
+                     reaction=[{'type':'emoji','emoji':markup['aof_reaction']}],is_big=False)
+        except TelegramError as error:
+            # Disabled reactions or unsupported emoji must not block the outbox.
+            if error.code not in (400,403):
+                raise
+        with db:
+            db.execute('UPDATE outbox SET delivered=1 WHERE id=?',(report_id,))
+        return True
+    if actor < 0:
+        try:
+            api.call('sendChatAction',chat_id=actor,action='typing',_timeout=3)
+        except TelegramError:
+            pass
     previous = db.execute('SELECT message_id FROM message_handles WHERE recipient=? AND message_key=?',
                           (actor, key)).fetchone() if key else None
     payload = {'chat_id': actor, 'text': text, 'link_preview_options': {'is_disabled': True}}
