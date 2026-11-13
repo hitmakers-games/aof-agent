@@ -61,3 +61,16 @@ class Telegram:
         if not isinstance(data, dict) or not data.get("ok"):
             raise TelegramError()
         return data["result"]
+
+    def download(self, file_id):
+        from urllib.parse import quote
+        info=self.call('getFile',file_id=file_id)
+        if info.get('file_size',0)>20*1024*1024: raise ValueError('Attachment exceeds 20 MiB.')
+        path=info['file_path']
+        if path.startswith('/') or '..' in path.split('/'): raise ValueError('Invalid Telegram file path.')
+        try:
+            with urlopen(f'https://api.telegram.org/file/bot{self.token}/'+quote(path,safe='/'),timeout=40) as response:
+                content=response.read(20*1024*1024+1)
+        except (HTTPError,URLError,OSError): raise TelegramError() from None
+        if len(content)>20*1024*1024: raise ValueError('Attachment exceeds 20 MiB.')
+        return content

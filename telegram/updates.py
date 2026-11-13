@@ -65,7 +65,7 @@ def handle_update(db, update, pairing_code, pairing_expires_at, now=None):
                 put(db,'offset',update_id+1)
                 return None
             actor=identity(message)
-            text=message.get('text','') if isinstance(message,dict) else ''
+            text=(message.get('text') or message.get('caption','')) if isinstance(message,dict) else ''
             if actor and isinstance(text,str):
                 head=text.strip().split(maxsplit=1)[0].split('@',1)[0].lower() if text.strip() else ''
                 owner=setting(db,'owner')
@@ -87,13 +87,15 @@ def handle_update(db, update, pairing_code, pairing_expires_at, now=None):
                     pass
                 else:
                     def command():
-                        if not text.strip() and any(k in message for k in ('photo','document','voice','video')):
+                        if not text.strip() and any(k in message for k in ('voice','video')):
                             access.require(db,actor,'operator')
                             return 'Please describe the issue in text; attachment analysis is not enabled.'
                         from gateway.discussion import context
                         reply=message.get('reply_to_message') or {}
                         discussion=context(db,actor,reply.get('message_id')) if isinstance(reply,dict) else None
-                        return dispatch(db,update_id,text,actor,discussion)
+                        from telegram.media import context, retain
+                        if reply: retain(db,reply)
+                        return dispatch(db,update_id,text+context(message),actor,discussion)
                     response=action(db,command)
                     if response:
                         # Permission denials can be read by any active member;

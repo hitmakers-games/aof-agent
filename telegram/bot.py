@@ -83,6 +83,8 @@ def serve(state, secret):
     next_typing = 0
     while True:
         try:
+            from telegram.media import process_one as transfer_one
+            transfer_one(db, api)
             delivered = deliver_one(db, api)
             if delivered:
                 time.sleep(1.1)

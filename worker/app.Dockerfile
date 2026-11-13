@@ -12,7 +12,7 @@ COPY coding/sandbox.py coding/config.py coding/queue.py coding/prompt.py coding/
 COPY repositories/github_app.py repositories/credential.py repositories/bootstrap.py /opt/aof-agent/repositories/
 COPY vpn/proxy.py /opt/aof-agent/vpn/
 COPY worker/app_server.py worker/outcome.py worker/background.py worker/run.py worker/chat.py worker/check_sandbox.py /opt/aof-agent/worker/
-COPY telegram/history.py telegram/groups.py telegram/bot.py telegram/api.py telegram/storage.py telegram/updates.py telegram/delivery.py /opt/aof-agent/telegram/
+COPY telegram/media.py telegram/history.py telegram/groups.py telegram/bot.py telegram/api.py telegram/storage.py telegram/updates.py telegram/delivery.py /opt/aof-agent/telegram/
 COPY gateway/conversation.py gateway/preflight.py gateway/agent_memory.py gateway/jira_intake.py gateway/subscriptions.py gateway/models.py gateway/commands.py gateway/tasks.py gateway/redaction.py gateway/kubernetes.py gateway/diagnostics.py gateway/observer.py gateway/access.py gateway/work.py gateway/buttons.py gateway/notices.py gateway/drafts.py gateway/discussion.py gateway/coordinator.py /opt/aof-agent/gateway/
 
 RUN chmod 755 /opt/aof-agent/coding/askpass.sh

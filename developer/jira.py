@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import re
 import time
+import uuid
 from urllib.parse import urlencode
 from urllib.request import Request,build_opener,ProxyHandler
 from urllib.error import HTTPError
@@ -24,14 +25,22 @@ class Jira:
         self.token=None
         self.expires=0
 
-    def request(self,path,body=None,method=None,binary=False):
+    def request(self,path,body=None,method=None,binary=False,upload=None):
         try:
             if time.time()>self.expires:
                 data=urlencode({'client_id':self.config['clientId'],'client_secret':self.config['clientSecret'],'grant_type':'client_credentials'}).encode()
                 with self.opener.open(Request(self.config['tokenUrl'],data=data,headers={'Content-Type':'application/x-www-form-urlencoded'}),timeout=20) as response:token=json.load(response)
                 self.token=token['access_token'];self.expires=time.time()+token['expires_in']-60
-            request=Request(self.config['apiBaseUrl']+path,data=None if body is None else json.dumps(body).encode(),method=method,
-                headers={'Authorization':'Bearer '+self.token,'Content-Type':'application/json','Accept':'*/*' if binary else 'application/json'})
+            data=None if body is None else json.dumps(body).encode()
+            headers={'Authorization':'Bearer '+self.token,'Content-Type':'application/json','Accept':'*/*' if binary else 'application/json'}
+            if upload:
+                filename,content=upload
+                if len(content)>20*1024*1024: raise ValueError('Attachment exceeds 20 MiB.')
+                filename=re.sub(r'[^A-Za-z0-9._-]','_',filename)[:200]
+                boundary=uuid.uuid4().hex
+                data=(f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="{filename}"\r\nContent-Type: application/octet-stream\r\n\r\n').encode()+content+f'\r\n--{boundary}--\r\n'.encode()
+                headers.update({'Content-Type':'multipart/form-data; boundary='+boundary,'X-Atlassian-Token':'no-check'})
+            request=Request(self.config['apiBaseUrl']+path,data=data,method=method,headers=headers)
             with self.opener.open(request,timeout=25) as response:
                 raw=response.read((20*1024*1024 if binary else 512*1024)+1)
             if binary:
@@ -80,3 +89,7 @@ class Jira:
         identifier=str(file['id'])
         if not identifier.isdigit():raise ValueError('Invalid attachment ID.')
         return file,self.request('/attachment/content/'+identifier+'?redirect=false',binary=True)
+
+    def upload(self,issue,filename,content):
+        self.execute('get',issue=issue)
+        return self.request('/issue/'+issue+'/attachments',method='POST',upload=(filename,content))

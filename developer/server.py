@@ -31,6 +31,7 @@ TOOLS=[
     {'name':'terraform','description':'Plan/apply the agent module from aof-infra/k8s/selectel using the EXISTING company S3 state aof-k8s.tfstate and remote locking. Plan snapshots committed source; apply takes that saved operation_id. Destructive or unrelated changes are stopped. Runs outside this conversation and reports to Telegram.','inputSchema':schema({'action':{'type':'string','enum':['plan','apply','status']},'operation_id':STRING},['action'])},
     {'name':'git','description':'List/checkout corporate repositories, inspect diff/log/status, fetch, commit and push the working branch. Checkout accepts branch, for example a Jira task key. Existing edits are preserved. task selects an existing task checkout for recovery or follow-up, without creating a new task. No PRs. Shell edits and tests use returned checkout paths. Set deployment_reviewed only after inspecting workflow triggers and verifying that the push is authorized.','inputSchema':schema({'action':{'type':'string','enum':['list','checkout','status','diff','log','fetch','commit','push']},'repository':STRING,'message':STRING,'branch':STRING,'task':STRING,'deployment_reviewed':{'type':'boolean'}},['action'])},
     {'name':'jira','description':'Read/search/create/update/comment/assign/transition AOF Jira tasks; users searches assignable teammates. account_id=self assigns to this developer. Only create tasks when requested.','inputSchema':schema({'action':{'type':'string','enum':['myself','users','search','get','create','update','comment','assign','transitions','transition']},'issue':STRING,'query':STRING,'summary':STRING,'description':STRING,'account_id':STRING,'transition_id':STRING,'issue_type':STRING},['action'])},
+    {'name':'jira_upload','description':'Attach a received Telegram screenshot/document to a Jira issue. Use message_id from Telegram attachment context or history, with optional zero-based index. Only when the user requests attaching it.','inputSchema':schema({'issue':STRING,'message_id':{'type':'integer'},'index':{'type':'integer','minimum':0}},['issue','message_id'])},
     {'name':'jira_attachment','description':'Send a Jira attachment to the current Telegram chat when the user requests it. Omit attachment_id only for a single attachment.','inputSchema':schema({'issue':STRING,'attachment_id':STRING},['issue'])},
     {'name':'kubernetes','description':'Inspect cluster workloads/logs and administer aof-agent: apply, patch, delete, scale, restart, or exec commands in its pods. Secrets are redacted. Production writes are protected.','inputSchema':schema({'action':{'type':'string','enum':['get','logs','apply','delete','patch','scale','restart','exec']},'namespace':STRING,'resource':STRING,'name':STRING,'manifest':{'type':'object','additionalProperties':True},'patch':{'type':'object','additionalProperties':True},'replicas':{'type':'integer','minimum':0,'maximum':5},'container':STRING,'tail':{'type':'integer','minimum':1,'maximum':300},'command':{'type':'array','items':STRING,'maxItems':40}},['action'])},
     {'name':'telegram_chats','description':'List conversations whose messages this bot has received and saved. Administrators can discover all retained chats.','inputSchema':schema({})},
@@ -139,18 +140,30 @@ class Developer:
                 result=once(self.db,os.environ.get('AOF_MCP_REQUEST','0'),'jira.'+args['action'],args,lambda:self.jira.execute(**args))
             else:result=self.jira.execute(**args)
         elif name=='jira_attachment':
-            from pathlib import Path
-            from telegram.api import Telegram
+            import base64
+            from telegram.media import transfer
             from developer.effects import once
             if self.jira is None:self.jira=Jira()
+            file,content=self.jira.attachment(**args)
             def send():
-                file,content=self.jira.attachment(**args)
-                api=Telegram(Path('/run/secrets/telegram/token').read_text().strip())
-                message=api.call('sendDocument',chat_id=self.chat,
-                    caption=args['issue']+' — '+file['filename'],
-                    _upload=('document',file['filename'],content))
-                return {'sent':True,'chat_id':self.chat,'message_id':message['message_id'],'filename':file['filename']}
+                return transfer(self.db,{'action':'send','chat':self.chat,'filename':file['filename'],
+                    'caption':args['issue']+' — '+file['filename'],'content':base64.b64encode(content).decode()})
             result=once(self.db,os.environ.get('AOF_MCP_REQUEST','0'),'telegram.jira_attachment',args,send)
+        elif name=='jira_upload':
+            import base64
+            from telegram.media import transfer
+            from telegram.storage import setting
+            from developer.effects import once
+            files=json.loads(setting(self.db,f"telegram-media:{self.chat}:{args['message_id']}",'[]'))
+            index=args.get('index',0)
+            if index<0 or index>=len(files):raise ValueError('No attachment at that message/index in this chat.')
+            file=files[index]
+            if file.get('file_size',0)>20*1024*1024:raise ValueError('Attachment exceeds 20 MiB.')
+            if self.jira is None:self.jira=Jira()
+            self.jira.execute('get',issue=args['issue'])
+            content=transfer(self.db,{'action':'download','file_id':file['file_id']})
+            result=once(self.db,'telegram:'+str(self.chat),'jira.upload',args,
+                lambda:self.jira.upload(args['issue'],file['filename'],base64.b64decode(content['content'])))
         elif name=='kubernetes':
             if args.get('action') in {'apply','delete','patch','scale','restart','exec'}:
                 access.require(self.db,self.actor,'admin')

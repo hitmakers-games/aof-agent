@@ -20,7 +20,9 @@ def record(db, message):
             return
     elif setting(db,f'group:{chat_id}:enabled','0')!='1':
         return
-    text=message.get('text') or message.get('caption')
+    from telegram.media import retain
+    files=retain(db,message)
+    text=message.get('text') or message.get('caption') or ('[Attachment]' if files else '')
     if not isinstance(text,str) or not text:
         return
     title=chat.get('title') or chat.get('username') or chat.get('first_name')
@@ -80,6 +82,10 @@ def read(db, actor, current_chat, chat_id=None, query='', limit=50, before_messa
         WHERE chat_id=? AND lower(text) LIKE ?'''+cursor+' ORDER BY message_id DESC LIMIT ?',
         (*parameters,limit)).fetchall()
     messages=[{'message_id':mid,'sender':name,'time':date,'text':redact(text)} for mid,name,date,text in reversed(rows)]
+    import json
+    for message in messages:
+        files=json.loads(setting(db,f"telegram-media:{target}:{message['message_id']}",'[]'))
+        if files: message['attachments']=files
     if not messages and before_message_id is None:
         # Previously stored conversations remain searchable without inventing
         # Telegram message IDs or claiming complete historical group coverage.
