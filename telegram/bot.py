@@ -33,23 +33,27 @@ def status_text(db):
 
 
 def refresh_typing(db, api, next_refresh=0, now=None):
-    people = db.execute("""SELECT DISTINCT COALESCE(chat_id,?) FROM inbox
-                           WHERE status IN ('queued','running','cancelling') LIMIT 5""",
-                        (setting(db,'owner'),)).fetchall()
+    people = db.execute("""SELECT DISTINCT COALESCE(chat_id,?),requested_by FROM inbox
+                           WHERE status IN ('queued','running')
+                           AND (COALESCE(chat_id,?)>0 OR
+                                (status='running' AND EXISTS (SELECT 1 FROM settings
+                                 WHERE key='typing-request:' || CAST(inbox.update_id AS TEXT)))) LIMIT 5""",
+                        (setting(db,'owner'),setting(db,'owner'))).fetchall()
     if not people or not engine_ready(db):
         return 0
     now = time.monotonic() if now is None else now
     if now < next_refresh:
         return next_refresh
     delay = 4
-    for (actor,) in people:
+    for actor, requested_by in people:
         if actor is None:
             continue
         if int(actor)>0 and not access.allowed(db,int(actor),'viewer'):
             continue
-        # Reading a group message is not a commitment to reply.
         if int(actor)<0:
-            continue
+            from telegram.groups import enabled
+            if not enabled(db,int(actor)) or not access.allowed(db,requested_by,'viewer'):
+                continue
         try:
             api.call('sendChatAction',chat_id=int(actor),action='typing',_timeout=3)
         except TelegramError as error:

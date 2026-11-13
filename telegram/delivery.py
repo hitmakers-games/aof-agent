@@ -34,11 +34,6 @@ def deliver_one(db, api):
         with db:
             db.execute('UPDATE outbox SET delivered=1 WHERE id=?',(report_id,))
         return True
-    if actor < 0:
-        try:
-            api.call('sendChatAction',chat_id=actor,action='typing',_timeout=3)
-        except TelegramError:
-            pass
     previous = db.execute('SELECT message_id FROM message_handles WHERE recipient=? AND message_key=?',
                           (actor, key)).fetchone() if key else None
     payload = {'chat_id': actor, 'text': text, 'link_preview_options': {'is_disabled': True}}

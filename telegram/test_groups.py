@@ -100,6 +100,34 @@ class GroupTests(unittest.TestCase):
         tasks.finish(self.db,self.number,'[[SILENT]]')
         self.assertFalse(deliver_one(self.db,api))
 
+    def test_group_typing_requires_commitment_and_stops_when_finished(self):
+        import time
+        from telegram.bot import refresh_typing
+        from worker.chat import mark_responding
+        self.message('Please fix this')
+        request=self.number
+        with self.db:
+            self.db.execute("UPDATE inbox SET status='running' WHERE update_id=?",(request,))
+        with self.db:
+            put(self.db,'engine_state','gateway')
+            put(self.db,'engine_heartbeat',time.time())
+        api=Mock()
+        refresh_typing(self.db,api)
+        api.call.assert_not_called()
+        mark_responding(self.db,request)
+        deadline=refresh_typing(self.db,api,now=10)
+        api.call.assert_called_once_with('sendChatAction',chat_id=-900,action='typing',_timeout=3)
+        refresh_typing(self.db,api,deadline,now=11)
+        self.assertEqual(api.call.call_count,1)
+        refresh_typing(self.db,api,deadline,now=14)
+        self.assertEqual(api.call.call_count,2)
+        tasks.finish(self.db,request,'Fixed')
+        api.reset_mock()
+        refresh_typing(self.db,api,now=18)
+        api.call.assert_not_called()
+        deliver_one(self.db,api)
+        self.assertEqual([call.args[0] for call in api.call.call_args_list],['sendMessage'])
+
     def test_disabled_reactions_do_not_block_delivery_and_revocation_prevents_them(self):
         from telegram.api import TelegramError
         self.message('Thanks',actor=456)

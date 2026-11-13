@@ -91,7 +91,7 @@ class Client:
 
 
 def run(command, environment, root, model, effort, prompt, timeout=3600,
-        cancelled=None, followups=None, accepted=None, released=None, progress=None, output_schema=None, interim=None):
+        cancelled=None, followups=None, accepted=None, released=None, progress=None, output_schema=None, interim=None, responding=None):
     client = Client(command, environment)
     try:
         client.request('initialize', {'clientInfo': {'name': 'aof_agent', 'title': 'AOF Agent', 'version': '1'}})
@@ -127,7 +127,11 @@ def run(command, environment, root, model, effort, prompt, timeout=3600,
                         interim_budget = 1
             value = client.notifications.pop(0) if client.notifications else client.receive()
             method, params = value.get('method'), value.get('params', {})
-            if method == 'item/completed':
+            if method == 'item/started':
+                item = params.get('item', {})
+                if responding and item.get('type') == 'agentMessage' and item.get('phase') == 'commentary':
+                    responding()
+            elif method == 'item/completed':
                 item = params.get('item', {})
                 if item.get('type') == 'agentMessage':
                     response = item.get('text', response)
