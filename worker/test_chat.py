@@ -133,3 +133,49 @@ class ChatTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class SupervisionTests(unittest.TestCase):
+    def test_crash_is_redacted_interrupted_and_not_replayed(self):
+        import threading
+        from telegram.storage import connect, setting, put
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root)/'state.sqlite3'
+            db = connect(path)
+            with db:
+                put(db, 'owner', 123)
+                db.execute("INSERT INTO inbox(update_id,text,status) VALUES (1,'external write','queued')")
+            supervisor = chat.ConversationSupervisor()
+            original = chat.process_one
+            def crash(prompt):
+                raise RuntimeError('token=private-value unexpected crash')
+            def process(connection, claimed):
+                return original(connection, crash, claimed)
+            with patch.object(chat, 'connect', side_effect=lambda _: connect(path)), patch.object(chat, 'process_one', side_effect=process):
+                worker = threading.Thread(target=supervisor.run)
+                worker.start()
+                worker.join(5)
+                self.assertFalse(worker.is_alive())
+            self.assertEqual(db.execute('SELECT status FROM inbox WHERE update_id=1').fetchone()[0], 'interrupted')
+            diagnostic = setting(db, 'conversation-error:1')
+            self.assertIn('RuntimeError', diagnostic)
+            self.assertNotIn('private-value', diagnostic)
+            self.assertIn('"request": 1', diagnostic)
+            ready = Path(root)/'ready'
+            supervisor.workers = {0: worker}
+            replacement = Mock()
+            replacement.is_alive.return_value = True
+            with patch.object(chat.threading, 'Thread', return_value=replacement), patch.object(chat, 'Path', return_value=ready):
+                supervisor.tick(db)
+                self.assertEqual(setting(db, 'engine_state'), 'degraded')
+                self.assertFalse(ready.exists())
+                supervisor.tick(db)
+                self.assertEqual(setting(db, 'engine_state'), 'gateway')
+                self.assertTrue(ready.exists())
+            with db:
+                db.execute("INSERT INTO inbox(update_id,text,status) VALUES (2,'new request','queued')")
+            reply = Mock(return_value='Recovered')
+            self.assertTrue(original(db, reply))
+            self.assertFalse(original(db, reply))
+            reply.assert_called_once()
+            self.assertEqual(db.execute('SELECT status FROM inbox WHERE update_id=1').fetchone()[0], 'interrupted')
+            db.close()

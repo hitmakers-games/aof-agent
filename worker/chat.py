@@ -8,6 +8,7 @@ import subprocess
 import sys
 import time
 import threading
+import traceback
 
 from telegram.bot import connect, put, queue_report
 from worker.run import TaskError, TaskCancelled, child_environment
@@ -87,11 +88,12 @@ def recover_interrupted(db):
     tasks.recover(db, "model")
 
 
-def process_one(db, reply=None):
+def process_one(db, reply=None, claimed=lambda request: None):
     item = tasks.claim(db, "model")
     if item is None:
         return False
     task_id = item["update_id"]
+    claimed(task_id)
     text = item["text"]
     if item["context"]:
         text += "\n\nObserved stand evidence:\n" + item["context"]
@@ -127,7 +129,8 @@ def process_one(db, reply=None):
         tasks.finish(db, task_id, response, proposals=proposals)
     except TaskCancelled:
         tasks.finish(db, task_id, "Cancelled", "cancelled")
-    except (TaskError, OSError, subprocess.SubprocessError):
+    except (TaskError, OSError, subprocess.SubprocessError) as error:
+        record_failure(db, task_id, error)
         tasks.finish(db, task_id, "The developer could not complete this request. Use /status, then send a new request to retry.", "failed")
     return True
 
@@ -167,26 +170,66 @@ def model_reply(prompt, cancelled=None, actor=None, chat_id=None, request_id=Non
         released=released,output_schema=output_schema,interim=interim)
 
 
-def heartbeat():
-    db=connect('/transport/telegram.sqlite3')
-    while True:
-        with db:
-            put(db,'engine_state','gateway')
-            put(db,'engine_heartbeat',time.time())
-        Path('/tmp/chat-ready').touch()
-        models.publish_catalog()
-        time.sleep(5)
+def record_failure(db, request, error):
+    # No locals or request body; redact before bounding so truncation cannot expose a token.
+    diagnostic = redact(''.join(traceback.format_exception(type(error), error, error.__traceback__)))[:8192]
+    with db:
+        put(db, 'conversation-error:'+str(request), json.dumps({
+            'request': request, 'time': time.time(), 'diagnostic': diagnostic}))
 
 
-def conversation_loop():
-    db=connect('/transport/telegram.sqlite3')
-    while True:
+class ConversationSupervisor:
+    def __init__(self):
+        self.workers = {}
+        self.failed = threading.Event()
+
+    def run(self):
+        db = None
+        request = None
+        def claimed(value):
+            nonlocal request
+            request = value
         try:
-            if not process_one(db):time.sleep(0.5)
-        except (StorageError,sqlite3.Error,OSError):
-            db.close()
-            time.sleep(2)
-            db=connect('/transport/telegram.sqlite3')
+            db = connect('/transport/telegram.sqlite3')
+            while True:
+                request = None
+                if not process_one(db, claimed=claimed):
+                    time.sleep(0.5)
+        except BaseException as error:
+            self.failed.set()
+            if db is not None:
+                try:
+                    db.rollback()
+                    record_failure(db, request, error)
+                    if request is not None:
+                        tasks.finish(db, request,
+                            'Conversation worker stopped unexpectedly. External actions may have completed. '
+                            'Request preserved; inspect before sending a new request. No automatic retry.', 'interrupted')
+                except BaseException:
+                    # Do not replace a worker if its request could not be safely finalized.
+                    # Startup recovery will interrupt it after the process restarts.
+                    os._exit(1)
+        finally:
+            if db is not None:
+                db.close()
+
+    def tick(self, db):
+        dead = [index for index, thread in self.workers.items() if not thread.is_alive()]
+        degraded = self.failed.is_set() or bool(dead)
+        self.failed.clear()
+        for index in range(2):
+            if index not in self.workers or index in dead:
+                thread = threading.Thread(target=self.run, daemon=True, name=f'chat-{index}')
+                self.workers[index] = thread
+                thread.start()
+        with db:
+            put(db, 'engine_state', 'degraded' if degraded else 'gateway')
+            put(db, 'engine_heartbeat', time.time())
+        ready = Path('/tmp/chat-ready')
+        if degraded:
+            ready.unlink(missing_ok=True)
+        else:
+            ready.touch()
 
 
 def main():
@@ -208,20 +251,16 @@ def main():
             from worker.check_sandbox import check
             check()
             recover_interrupted(db)
-            threading.Thread(target=heartbeat,daemon=True).start()
+            supervisor = ConversationSupervisor()
             from gateway.agent_memory import follow
             threading.Thread(target=follow,daemon=True).start()
             if Path('/run/secrets/jira/credentials.json').exists():
                 from gateway.jira_intake import follow as jira_follow
                 threading.Thread(target=jira_follow,daemon=True).start()
-            for index in range(2):
-                threading.Thread(target=conversation_loop,daemon=True,name=f'chat-{index}').start()
-            print("Developer chat ready; two conversations, background work queue", flush=True)
+            print("Developer chat ready; supervised conversations, background work queue", flush=True)
             while True:
-                with db:
-                    put(db, "engine_state", "gateway")
-                    put(db, "engine_heartbeat", time.time())
-                Path("/tmp/chat-ready").touch()
+                supervisor.tick(db)
+                models.publish_catalog()
                 time.sleep(5)
     except (TaskError, OSError, sqlite3.Error, StorageError, subprocess.SubprocessError):
         print("Chat worker stopped; check sign-in and sandbox configuration", file=sys.stderr)

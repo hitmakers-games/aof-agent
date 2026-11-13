@@ -82,7 +82,7 @@ class Developer:
             return remember(args.get('text',''))
         if name=='health':
             from telegram.storage import setting
-            result={'chat':'online' if time.time()-float(setting(self.db,'engine_heartbeat','0'))<180 else 'offline',
+            result={'chat':('degraded' if setting(self.db,'engine_state')=='degraded' else 'online') if time.time()-float(setting(self.db,'engine_heartbeat','0'))<180 else 'offline',
                     'background':'online' if time.time()-float(setting(self.db,'coding_heartbeat','0'))<180 else 'offline',
                     'active_tasks':self.db.execute("SELECT count(*) FROM work_items WHERE state IN ('queued','running','cancelling')").fetchone()[0]}
             return result

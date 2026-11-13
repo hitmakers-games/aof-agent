@@ -82,7 +82,7 @@ def dispatch(db, update_id, text, actor=None, context=None, chat_id=None):
         coding_active=db.execute("SELECT count(*) FROM work_items WHERE state IN ('running','cancelling')").fetchone()[0]
         paused = setting(db,'paused','0')=='1'
         result = (f"Background queue: {'paused' if paused else 'running'}\n"
-                f"Developer: {'online' if age<180 else 'offline'}\nStand diagnostics: {'online' if ops_age<30 else 'offline'}\n"
+                f"Developer: {('degraded' if setting(db,'engine_state')=='degraded' else 'online') if age<180 else 'offline'}\nStand diagnostics: {'online' if ops_age<30 else 'offline'}\n"
                 f"Task coordinator: {'online' if coordinator_age<30 else 'offline'}\n"
                 f"Jira: {setting(db,'jira_state','not configured')}\nCoding worker: {coding_state}\n"
                 f"Auto-start: {setting(db,'autostart','off')}\n"
