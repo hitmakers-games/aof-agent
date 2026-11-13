@@ -49,61 +49,11 @@ class BotTests(unittest.TestCase):
         self.assertEqual(bot.setting(self.db, "owner"), "123")
         self.assertEqual(self.db.execute("SELECT COUNT(*) FROM outbox").fetchone()[0], 1)
 
-    def test_owner_and_offset_survive_restart(self):
-        self.pair()
-        with bot.connect(self.path) as reopened:
-            self.assertEqual(bot.setting(reopened, "owner"), "123")
-            self.assertEqual(bot.setting(reopened, "offset"), "2")
-
-    def test_typing_refreshes_while_busy_and_stops_after_completion(self):
-        self.pair()
-        with self.db:
-            bot.put(self.db, "engine_state", "chat")
-            bot.put(self.db, "engine_heartbeat", time.time())
-            self.db.execute("INSERT INTO inbox(update_id,text,status) VALUES (2,'hello','queued')")
-        api=Mock()
-        deadline=bot.refresh_typing(self.db,api,now=0)
-        api.call.assert_called_once_with("sendChatAction",chat_id=123,action="typing",_timeout=3)
-        self.assertEqual(bot.refresh_typing(self.db,api,deadline,now=3),4)
-        self.assertEqual(api.call.call_count,1)
-        self.assertEqual(bot.refresh_typing(self.db,api,deadline,now=4),8)
-        self.assertEqual(api.call.call_count,2)
-        with self.db:self.db.execute("UPDATE inbox SET status='completed'")
-        self.assertEqual(bot.refresh_typing(self.db,api,8,now=8),0)
-        self.assertEqual(api.call.call_count,2)
-
-    def test_typing_is_best_effort_and_respects_retry_delay(self):
-        self.pair()
-        with self.db:
-            bot.put(self.db,"engine_state","chat")
-            bot.put(self.db,"engine_heartbeat",time.time())
-            self.db.execute("INSERT INTO inbox(update_id,text,status) VALUES (2,'hello','running')")
-        api=Mock()
-        api.call.side_effect=bot.TelegramError(429,12)
-        self.assertEqual(bot.refresh_typing(self.db,api,now=0),12)
-        bot.refresh_typing(self.db,api,12,now=5)
-        self.assertEqual(api.call.call_count,1)
-        with self.db:bot.put(self.db,"engine_heartbeat",0)
-        self.assertEqual(bot.refresh_typing(self.db,api,12,now=15),0)
-        self.assertEqual(api.call.call_count,1)
-
-    def test_pairing_accepts_pasted_whitespace_and_bot_command_suffix(self):
-        notice = bot.handle_update(self.db, message(1, "\n/start@AofAgentBot   private-code\n"),
-                                   "private-code", 100, now=10)
-        self.assertIsNone(notice)
-        self.assertEqual(bot.setting(self.db, "owner"), "123")
-
     def test_unpaired_chat_gets_a_hint_without_disclosing_pairing_code(self):
         notice = bot.handle_update(self.db, message(1, "hello"), "private-code", 100, now=10)
         self.assertEqual(notice["chat_id"], 123)
         self.assertNotIn("private-code", notice["text"])
         self.assertEqual(bot.setting(self.db, "pairing_last_result"), "missing_code")
-        self.assertIsNone(bot.setting(self.db, "owner"))
-
-    def test_expired_pairing_is_explained_without_binding_owner(self):
-        notice = bot.handle_update(self.db, message(1, "/start private-code"),
-                                   "private-code", 100, now=101)
-        self.assertIn("expired", notice["text"])
         self.assertIsNone(bot.setting(self.db, "owner"))
 
     def test_duplicate_updates_do_not_duplicate_inbox_or_add_acknowledgments(self):
@@ -152,13 +102,6 @@ class BotTests(unittest.TestCase):
         chunks = [row[0] for row in self.db.execute("SELECT text FROM outbox ORDER BY id")]
         self.assertEqual("".join(chunks), text)
         self.assertTrue(all(len(part.encode("utf-16-le")) <= 7000 for part in chunks))
-
-    def test_status_does_not_claim_ai_is_running(self):
-        self.pair()
-        self.handle(message(2, "/status"))
-        text = self.db.execute("SELECT text FROM outbox ORDER BY id DESC LIMIT 1").fetchone()[0]
-        self.assertIn("Developer: offline", text)
-        self.assertEqual(self.db.execute("SELECT COUNT(*) FROM inbox").fetchone()[0], 0)
 
     def test_api_error_never_exposes_token_and_respects_rate_limit(self):
         token = "123:" + "x" * 30

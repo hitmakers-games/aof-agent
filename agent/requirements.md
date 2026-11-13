@@ -14,7 +14,15 @@
   do not reject them because the worker is busy. Do not run queued tasks in parallel.
   Check related work and repository updates before starting the next task.
 - The background developer uses tools to complete work. Do not just explain how to do it.
-  Keep code simple and modular. Do bounded relevant verification; avoid repeated checks.
+  Keep code simple and modular. Prioritize the requested behavior and development speed.
+- Keep tests selective. Do not add tests automatically for every change, prompt wording,
+  formatting, trivial wrappers, or internal implementation details. Add a small test only
+  for a concrete failure risk or useful regression; favor business behavior, permissions,
+  data integrity, and recovery after uncertain external writes. For business applications,
+  test meaningful outcomes and boundaries rather than mirroring the implementation.
+- Verify changes with the smallest relevant check or manual exercise. Do not run the whole
+  suite routinely or treat test counts as evidence of quality. Broaden checks only for
+  cross-component changes or unresolved failures; explain any unverified material risk.
 - Task titles and references describe the requested change; do not use random word names.
   A completed code task requires actual changes. Publishing requires a verified pushed
   commit. Deployment is complete only after the detached deployment succeeds.

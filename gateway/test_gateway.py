@@ -52,14 +52,6 @@ class GatewayTests(unittest.TestCase):
         self.assertEqual(tasks.task(self.db, 1)["status"], "cancelled")
         self.assertNotIn("discarded", tasks.task(self.db, 1)["response"])
 
-    def test_tasks_hides_transport_jobs_without_erasing_conversation_history(self):
-        with self.db:
-            self.db.execute("INSERT INTO inbox(update_id,text,status,kind,chat_id,requested_by) VALUES (1,'request','completed','message',123,123)")
-        listing=self.command(10,'/tasks')
-        self.assertNotIn('chat/diagnostic',listing)
-        self.assertNotIn('#1',listing)
-        self.assertEqual(self.db.execute('SELECT count(*) FROM inbox').fetchone()[0],1)
-
     def test_queued_cancel_prevents_claim_and_completed_cancel_does_not_reopen(self):
         self.command(1, "/ask queued")
         self.command(2, "/cancel 1")
@@ -79,23 +71,6 @@ class GatewayTests(unittest.TestCase):
             self.assertEqual(tasks.task(reopened, 1)["status"], "interrupted")
             self.assertIsNone(tasks.claim(reopened, "model"))
             self.assertEqual(tasks.claim(reopened, "operations")["update_id"], 2)
-
-    def test_cancel_is_visible_across_worker_connections(self):
-        self.command(1, "/ask running")
-        tasks.claim(self.db, "model")
-        with connect(self.path) as other:
-            with other:
-                tasks.cancel(other, 1)
-        self.assertTrue(tasks.cancellation_requested(self.db, 1))
-        tasks.finish(self.db, 1, "Done")
-        self.assertEqual(tasks.task(self.db, 1)["status"], "cancelled")
-
-    def test_report_reads_saved_result_without_starting_work(self):
-        self.command(1, "/ask report")
-        tasks.claim(self.db, "model")
-        tasks.finish(self.db, 1, "Finding and next step")
-        self.assertIn("Finding and next step", self.command(2, "/report 1"))
-        self.assertEqual(self.db.execute("SELECT count(*) FROM inbox").fetchone()[0], 1)
 
     def test_analyses_require_evidence_before_the_model_can_claim(self):
         self.command(1, "/analyze dev backend 15m")

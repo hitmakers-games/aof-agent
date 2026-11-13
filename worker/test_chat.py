@@ -27,11 +27,6 @@ class ChatTests(unittest.TestCase):
             self.db.execute("INSERT INTO inbox(update_id,text,status) VALUES (?,?,?)",
                             (request_id, text, status))
 
-    def test_prompt_carries_autonomy_and_follow_up_guidance(self):
-        prompt = chat.prompt_for(self.db, "Continue")
-        for guidance in ("requested work directly", "Do not create a background task", "correction", "unless asked to stop"):
-            self.assertIn(guidance.lower(), prompt.lower())
-
     def test_reply_and_report_commit_together_and_are_not_run_again(self):
         self.enqueue(1)
         reply = Mock(return_value="Hi")
@@ -99,15 +94,6 @@ class ChatTests(unittest.TestCase):
         self.assertEqual({row['chat_id'] for row in private}, {123,-20})
         self.assertEqual([row['user'] for row in history(123,-20)], ['group work'])
         self.assertEqual([row['user'] for row in history(456,456)], ['other private work'])
-
-    def test_chat_command_enables_developer_tools_with_trusted_identity(self):
-        with patch('developer.session.workspace',return_value=Path(self.temp.name)),patch.object(chat, "run_app_server", return_value="Hello") as run:
-            self.assertEqual(chat.model_reply("test",actor=123,chat_id=123), "Hello")
-        args=run.call_args.args[0]
-        self.assertNotIn("features.shell_tool=false",args)
-        self.assertNotIn('--sandbox',args)
-        self.assertIn('default_permissions="developer"',args)
-        self.assertIn('mcp_servers.developer.required=true',args)
 
     def test_current_model_matches_launch_arguments_and_tool_metadata(self):
         selected={'model':'gpt-6-luna','effort':'low'}

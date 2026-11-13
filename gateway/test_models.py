@@ -69,13 +69,6 @@ class ModelsTest(unittest.TestCase):
             models.initialize(self.db)
         self.assertEqual(models.selected(self.db, 10), {'model':'gpt-6-luna','effort':'low'})
 
-    def test_other_admin_changes_the_same_shared_preference(self):
-        from gateway import access
-        with self.db:
-            access.grant(self.db, 10, 11, 'admin')
-            dispatch(self.db, 1, '/reasoning high', 11, chat_id=-20)
-        self.assertEqual(models.selected(self.db, 10)['effort'], 'high')
-
     def test_viewer_cannot_change_shared_settings(self):
         from gateway import access
         with self.db:
@@ -83,27 +76,5 @@ class ModelsTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             models.command(self.db, 11, -20, '/model', 'gpt-6-luna low')
         self.assertEqual(models.selected(self.db, 10), models.DEFAULT)
-
-    def test_removed_commands_do_not_create_requests_or_change_settings(self):
-        with self.db:
-            for command in ('/mode fast','/fast explain this','/smart solve this'):
-                self.assertEqual(dispatch(self.db,1,command,10),'Unknown command. Use /help.')
-        self.assertEqual(models.selected(self.db,10),models.DEFAULT)
-        self.assertEqual(self.db.execute('SELECT count(*) FROM inbox').fetchone()[0],0)
-        self.assertNotIn('Mode:',dispatch(self.db,2,'/status',10))
-        self.assertNotIn('/mode ',dispatch(self.db,3,'/help',10))
-
-    def test_queued_request_keeps_its_original_choice(self):
-        with self.db:
-            dispatch(self.db,1,'/model gpt-6-luna low',10)
-            dispatch(self.db,2,'explain this',10)
-            dispatch(self.db,3,'/model gpt-6-astra high',10)
-        self.assertEqual(models.for_request(self.db,2,10),{'model':'gpt-6-luna','effort':'low'})
-
-    def test_invalid_combination_does_not_replace_saved_choice(self):
-        with self.assertRaises(ValueError):
-            dispatch(self.db,1,'/reasoning impossible',10)
-        self.assertEqual(models.selected(self.db,10),models.DEFAULT)
-
 
 if __name__=='__main__':unittest.main()

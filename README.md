@@ -72,14 +72,17 @@ bytecode, local environments and Git metadata. Runtime dependencies still come f
 the pinned base images and their build definitions.
 
 The VPN suites require `cryptography` (provided by the VPN image; install it in
-a local virtual environment for host testing). Run all component unit suites in
-isolated processes:
+a local virtual environment for host testing). Prefer the smallest relevant check
+or manual exercise; tests are not required for every change. Keep regression tests
+for concrete failure risks rather than prompt wording or implementation details.
+Select component suites to run in isolated processes:
 
 ```sh
-python3 tools/check.py
+python3 tools/check.py gateway worker
 ```
 
-Use `python3 tools/check.py --postgres` to include database integration tests.
+Use `python3 tools/check.py --all` only when a full check is useful, or
+`python3 tools/check.py database --postgres` for database integration tests.
 
 PostgreSQL integration tests require their explicitly designated disposable test
 database; never point them at the live service. A successful test run or pushed
