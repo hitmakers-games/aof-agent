@@ -1,7 +1,7 @@
 import json
 import time
 import unittest
-from unittest.mock import Mock
+from unittest.mock import MagicMock
 from developer.jira import Jira
 
 
@@ -11,7 +11,7 @@ class JiraMediaTest(unittest.TestCase):
         jira.config={'apiBaseUrl':'https://example.invalid/rest/api/3'}
         jira.expires=time.time()+600
         jira.token='test-token'
-        jira.opener=Mock()
+        jira.opener=MagicMock()
         response=jira.opener.open.return_value.__enter__.return_value
         response.read.return_value=json.dumps([{'id':'123'}]).encode()
         result=jira.request('/issue/AOF-1/attachments',method='POST',upload=('screen.png',b'IMAGE'))
