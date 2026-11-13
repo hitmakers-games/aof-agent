@@ -38,3 +38,8 @@
 - Self updates must work with the current database schema. Prepare and authorize schema
   migrations separately before deploying code that needs them. Never assume editing a
   database initializer upgrades an already running database.
+
+- Keep agent code, instructions, prompts, build definitions and nonsecret configuration
+  in aof-agent; infrastructure definitions live in aof-infra. Runtime copies and caches
+  must be reproducible from those repositories. Document persistent data and generated
+  files in README.md; never use a temporary container as the only source of a change.

@@ -2,3 +2,6 @@
 **/__pycache__
 **/*.conf
 .env
+**/test_*.py
+**/*.pyc
+.venv
