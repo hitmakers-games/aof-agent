@@ -139,31 +139,12 @@ class Developer:
                 from developer.effects import once
                 result=once(self.db,os.environ.get('AOF_MCP_REQUEST','0'),'jira.'+args['action'],args,lambda:self.jira.execute(**args))
             else:result=self.jira.execute(**args)
-        elif name=='jira_attachment':
-            import base64
-            from telegram.media import transfer
-            from developer.effects import once
+        elif name in {'jira_attachment','jira_upload'}:
+            from developer import media
             if self.jira is None:self.jira=Jira()
-            file,content=self.jira.attachment(**args)
-            def send():
-                return transfer(self.db,{'action':'send','chat':self.chat,'filename':file['filename'],
-                    'caption':args['issue']+' — '+file['filename'],'content':base64.b64encode(content).decode()})
-            result=once(self.db,os.environ.get('AOF_MCP_REQUEST','0'),'telegram.jira_attachment',args,send)
-        elif name=='jira_upload':
-            import base64
-            from telegram.media import transfer
-            from telegram.storage import setting
-            from developer.effects import once
-            files=json.loads(setting(self.db,f"telegram-media:{self.chat}:{args['message_id']}",'[]'))
-            index=args.get('index',0)
-            if index<0 or index>=len(files):raise ValueError('No attachment at that message/index in this chat.')
-            file=files[index]
-            if file.get('file_size',0)>20*1024*1024:raise ValueError('Attachment exceeds 20 MiB.')
-            if self.jira is None:self.jira=Jira()
-            self.jira.execute('get',issue=args['issue'])
-            content=transfer(self.db,{'action':'download','file_id':file['file_id']})
-            result=once(self.db,'telegram:'+str(self.chat),'jira.upload',args,
-                lambda:self.jira.upload(args['issue'],file['filename'],base64.b64decode(content['content'])))
+            if name=='jira_attachment':
+                result=media.send(self.db,self.jira,self.chat,os.environ.get('AOF_MCP_REQUEST','0'),args)
+            else:result=media.upload(self.db,self.jira,self.chat,args)
         elif name=='kubernetes':
             if args.get('action') in {'apply','delete','patch','scale','restart','exec'}:
                 access.require(self.db,self.actor,'admin')
