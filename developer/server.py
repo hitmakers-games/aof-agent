@@ -24,7 +24,7 @@ STRING={'type':'string'}
 TOOLS=[
     {'name':'settings','description':'Admin only: change the shared model or reasoning level, or grant/revoke Telegram user roles. Read or list access with action=users.','inputSchema':schema({'action':{'type':'string','enum':['model','reasoning','grant','revoke','users','pause','resume']},'value':STRING},['action'])},
     {'name':'work','description':'The shared work queue. Use start only when the user explicitly requests queued or background work. Ordinary conversation and direct development do not require a task. Reuse reference for an existing Jira/Telegram task. Delete hides a closed local queue item while retaining its record and audit history; it never deletes an external Jira issue. Only set notify when asked for reports. Watch/unwatch subscribes this chat to a task, mine, all (admin), or jira; minutes=0 means changes only. Status includes the saved result. Background tasks use progress with a short description at meaningful stages.','inputSchema':schema({'action':{'type':'string','enum':['start','list','status','cancel','delete','watch','unwatch','progress']},'reference':STRING,'title':STRING,'description':STRING,'repositories':{'type':'array','items':STRING},'notify':{'type':'boolean'},'topic':{'type':'string','enum':['mine','all','jira']},'minutes':{'type':'integer','minimum':0,'maximum':1440},'events':{'type':'string','enum':['changes','finished']},'delivery':{'type':'string','enum':['answer','changes','published','deployed']}},['action'])},
-    {'name':'memory','description':'Read shared versioned project memory or immediately remember a confirmed nonsecret fact in aof-agent master. Admins may write; never save secrets, personal information, or raw chat transcripts. Edit shared rules directly with Git when asked.','inputSchema':schema({'action':{'type':'string','enum':['read','remember']},'text':STRING},['action'])},
+    {'name':'memory','description':'Read cached startup indexes, or read a current Markdown document with repository/path in md-common or md-aof. Admins may remember a concise confirmed nonsecret fact in an existing chosen document. Owner-maintained files are read-only. Never save private conversations or personal data. Use Git for structured edits and new indexed documents.','inputSchema':schema({'action':{'type':'string','enum':['read','remember']},'text':STRING,'repository':{'type':'string','enum':['md-common','md-aof']},'path':STRING},['action'])},
     {'name':'health','description':'Safe service availability, without logs or sensitive configuration. Available to viewers.','inputSchema':schema({})},
     {'name':'capabilities','description':'Read actual developer identity and connected capabilities. Use before claiming missing access.','inputSchema':schema({})},
     {'name':'self_deploy','description':'Build and deploy committed aof-agent code in a detached job, with rollback and Telegram reporting. Defaults to master; branch selects another committed app branch. It pulls and publishes clean checkouts first. Start returns immediately; acknowledge the queued job and finish the chat turn so it can restart this pod. Use status or /ops for progress.','inputSchema':schema({'action':{'type':'string','enum':['start','status']},'operation_id':STRING,'branch':STRING,'task':STRING,'dockerfile':{'type':'string','enum':['worker/app.Dockerfile','worker/Dockerfile']}},['action'])},
@@ -77,10 +77,13 @@ class Developer:
                 return execute(self.db,self.actor,self.chat,**args)
         if name=='memory':
             access.require(self.db,self.actor,'operator')
-            from gateway.agent_memory import context,remember
-            if args['action']=='read':return context()
+            from gateway.agent_memory import context,remember,read
+            if args['action']=='read':
+                if args.get('repository') or args.get('path'):
+                    return read(args.get('repository'),args.get('path'))
+                return context()
             access.require(self.db,self.actor,'admin')
-            return remember(args.get('text',''))
+            return remember(args.get('text',''),args.get('repository'),args.get('path'))
         if name=='health':
             from telegram.storage import setting
             result={'chat':('degraded' if setting(self.db,'engine_state')=='degraded' else 'online') if time.time()-float(setting(self.db,'engine_heartbeat','0'))<180 else 'offline',

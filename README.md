@@ -32,7 +32,14 @@ after restart. See `operations/runner.py` for deployment recovery.
 
 - `agent/identity.md`, `agent/requirements.md`, `agent/memory.md` are authoritative
   shared Markdown. `gateway/agent_memory.py` refreshes a runtime cache from `master`,
-  falling back to the image's version during outages. Memory writes commit to GitHub.
+  falling back to the image's version during outages. Project knowledge lives in
+  `hitmakers-games/md-common` and `hitmakers-games/md-aof` on `master`. Their README
+  indexes are cached independently; failed refreshes retain the last index with an
+  explicit stale/unavailable status. The GitHub App must have contents access to
+  both repositories. `memory.read` fetches current topic files; admin-only
+  `memory.remember` appends to an explicitly chosen existing topic using its SHA.
+  Owner-maintained documents are read-only. Structured edits use the Git tool.
+  Private history stays separate; knowledge documents never grant permissions.
 - `coding/prompt.py`, `worker/chat.py` and `worker/background.py` construct prompts.
 - `worker/requirements.toml` defines enforced Codex policy. Images copy it into
   `/etc/codex/requirements.toml`; `developer/session.py` builds per-request settings.

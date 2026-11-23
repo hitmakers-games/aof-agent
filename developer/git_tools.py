@@ -52,8 +52,9 @@ class Repositories:
         path=self.root/repository
         record=json.loads(self.records.read_text()) if self.records.exists() else {}
         remote=f'https://github.com/hitmakers-games/{repository}.git'
-        requested_branch=branch or ('master' if repository in {'aof-agent','aof-infra'} and action=='checkout' else None)
-        branch=branch or ('master' if repository in {'aof-agent','aof-infra'} else 'agent/'+self.root.name)
+        direct={'aof-agent','aof-infra','md-common','md-aof'}
+        requested_branch=branch or ('master' if repository in direct and action=='checkout' else None)
+        branch=branch or ('master' if repository in direct else 'agent/'+self.root.name)
         git.run(['check-ref-format','--branch',branch])
         if action=='checkout' and not path.exists():
             token=self.app.token(repository)

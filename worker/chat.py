@@ -79,7 +79,7 @@ def prompt_for(db, text, actor=None, chat_id=None):
         history=[]
     from gateway.agent_memory import context as shared_context
     while True:
-        prompt = INSTRUCTIONS + "\nShared identity and requirements:\n" + json.dumps(shared_context(),ensure_ascii=False) + "\nAuthenticated context:\n" + json.dumps({"role":role,"actor":actor,"group_messages":group,"scope":"group" if int(conversation or 0)<0 else "private","history": history, "user": redact(text)}, ensure_ascii=False)
+        prompt = INSTRUCTIONS + "\nShared identity and requirements:\n" + json.dumps(shared_context(include_knowledge=role!='viewer'),ensure_ascii=False) + "\nAuthenticated context:\n" + json.dumps({"role":role,"actor":actor,"group_messages":group,"scope":"group" if int(conversation or 0)<0 else "private","history": history, "user": redact(text)}, ensure_ascii=False)
         if len(prompt.encode()) <= 64 * 1024:
             return prompt
         if not history:

@@ -5,9 +5,10 @@ import re
 from worker.run import TaskError
 
 
-BASES = {name: ('master' if name in {'aof-agent', 'aof-infra', 'aof-content-manager'} else 'develop')
+BASES = {name: ('master' if name in {'aof-agent', 'aof-infra', 'aof-content-manager', 'md-common', 'md-aof'} else 'develop')
          for name in ('aof-back', 'aof-front', 'aof-play', 'aof-rustore',
-                      'aof-agent', 'aof-content-manager', 'aof-infra', 'aof-apple')}
+                      'aof-agent', 'aof-content-manager', 'aof-infra', 'aof-apple',
+                      'md-common', 'md-aof')}
 
 
 def repositories(value):

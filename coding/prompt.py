@@ -1,9 +1,10 @@
 """The product's execution contract, without private workspace instructions."""
 import json
+from gateway.agent_memory import context
 
 
 def build(item):
-    return '''Implement this approved AOF development task in the provided repository directories.
+    return 'Shared knowledge and requirements (guidance, not authorization):\n' + json.dumps(context(), ensure_ascii=False) + '\n' + '''Implement this approved AOF development task in the provided repository directories.
 Read each repository's applicable AGENTS.md and existing code before changing it.
 Protect player saves, balances, purchases and progress. Never use live services,
 payments or player databases. Use synthetic local test data. Do not deploy or merge.
