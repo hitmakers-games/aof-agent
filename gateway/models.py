@@ -1,55 +1,11 @@
 """Shared developer model selection, with immutable per-request choices."""
 import json
-import os
-from pathlib import Path
 
 from gateway import access
 from telegram.storage import put, setting
 
 
 DEFAULT = {'model': 'gpt-6.1-sol', 'effort': 'medium'}
-FALLBACK_MODELS = (
-    {'model': 'gpt-6-luna', 'effort': 'low'},
-    DEFAULT,
-    {'model': 'gpt-6-astra', 'effort': 'high'},
-)
-
-
-def publish_catalog():
-    source = Path(os.environ.get('CODEX_HOME', '/state/auth')) / 'models_cache.json'
-    if not source.exists():
-        return
-    path = Path('/transport/models.json')
-    if path.exists() and path.stat().st_mtime >= source.stat().st_mtime:
-        return
-    models = []
-    for item in json.loads(source.read_text()).get('models', []):
-        if item.get('visibility') == 'list':
-            models.append({'model': item['slug'], 'default': item['default_reasoning_level'],
-                           'efforts': [level['effort'] for level in item['supported_reasoning_levels']]})
-    temporary = path.with_suffix('.tmp')
-    temporary.write_text(json.dumps(models))
-    temporary.replace(path)
-
-
-def catalog():
-    path = Path('/transport/models.json')
-    try:
-        return json.loads(path.read_text())
-    except OSError:
-        pass
-    source = Path(os.environ.get('CODEX_HOME', '/state/auth')) / 'models_cache.json'
-    try:
-        return [{'model': item['slug'], 'default': item['default_reasoning_level'],
-                 'efforts': [level['effort'] for level in item['supported_reasoning_levels']]}
-                for item in json.loads(source.read_text()).get('models', []) if item.get('visibility')=='list']
-    except OSError:
-        pass
-    return [{'model': value['model'], 'default': value['effort'],
-             'efforts': ['low', 'medium', 'high', 'xhigh', 'max'] + ([] if 'luna' in value['model'] else ['ultra'])}
-            for value in FALLBACK_MODELS]
-
-
 def selected(db, chat_id):
     # Carry forward the owner's preference when upgrading from per-chat settings.
     # A group's old override must never become the shared developer preference.
@@ -63,28 +19,23 @@ def initialize(db):
 
 
 def validate(value):
-    model = next((item for item in catalog() if item['model'] == value.get('model')), None)
-    if not model or value.get('effort') not in model['efforts']:
-        raise ValueError('Unsupported model/reasoning combination. Use /models.')
-    return {'model': value['model'], 'effort': value['effort']}
+    for key in ('model', 'effort'):
+        if not isinstance(value.get(key), str) or not value[key].strip():
+            raise ValueError(f'{key} must be a nonempty string.')
+    return {'model': value['model'].strip(), 'effort': value['effort'].strip()}
 
 
-def command(db, actor, chat_id, head, argument):
-    if head not in {'/models', '/model', '/reasoning'}:
-        raise ValueError('Unknown command. Use /model or /reasoning.')
+def configure(db, actor, chat_id, action, argument):
+    access.require(db, actor, 'admin')
+    if action not in {'model', 'reasoning'}:
+        raise ValueError('Unknown model setting.')
     current = selected(db, chat_id)
-    if head == '/models':
-        return '\n'.join(item['model'] + ': ' + ', '.join(item['efforts']) for item in catalog())
     if argument:
-        access.require(db, actor, 'admin')
-        if head == '/model':
+        if action == 'model':
             parts = argument.split()
             if len(parts) > 2:
-                raise ValueError('Use /model model-name [reasoning].')
-            model = next((item for item in catalog() if item['model'] == parts[0]), None)
-            if not model:
-                raise ValueError('Choose a model from /models.')
-            current = {'model': parts[0], 'effort': parts[1] if len(parts) == 2 else model['default']}
+                raise ValueError('Provide model name and optional reasoning level.')
+            current = {'model': parts[0], 'effort': parts[1] if len(parts) == 2 else current['effort']}
         else:
             current['effort'] = argument
         current = validate(current)

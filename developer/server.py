@@ -56,8 +56,8 @@ class Developer:
                     from gateway.commands import dispatch
                     return dispatch(self.db,0,'/'+action,self.actor,chat_id=self.chat)
                 if action in {'model','reasoning'}:
-                    from gateway.models import command
-                    return command(self.db,self.actor,self.chat,'/'+action,args.get('value',''))
+                    from gateway.models import configure
+                    return configure(self.db,self.actor,self.chat,action,args.get('value',''))
                 return access.command(self.db,self.actor,'/'+action,args.get('value',''))
         if name=='work':
             if args['action']=='progress':

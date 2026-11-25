@@ -2,7 +2,6 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
 
 from gateway import models
 from gateway.commands import dispatch
@@ -19,38 +18,21 @@ class ModelsTest(unittest.TestCase):
     def tearDown(self):
         self.db.close();self.temp.cleanup()
 
-    def test_catalog_falls_back_when_cache_access_is_denied(self):
-        original_stat = Path.stat
-        original_read = Path.read_text
+    def test_settings_accept_models_and_efforts_without_a_catalog(self):
+        with self.db:
+            models.configure(self.db, 10, 10, 'model', 'custom-future-model custom-effort')
+            models.snapshot(self.db, 123, 10)
+        self.assertEqual(models.for_request(self.db, 123, 10),
+                         {'model': 'custom-future-model', 'effort': 'custom-effort'})
 
-        def denied_stat(path, *args, **kwargs):
-            if str(path) == '/transport/models.json':
-                raise PermissionError('cache access denied')
-            return original_stat(path, *args, **kwargs)
-
-        def denied_read(path, *args, **kwargs):
-            if str(path) == '/transport/models.json':
-                raise PermissionError('cache access denied')
-            return original_read(path, *args, **kwargs)
-
-        source = Path(self.temp.name) / 'models_cache.json'
-        source.write_text(json.dumps({'models': [{
-            'slug': 'fallback-model', 'visibility': 'list',
-            'default_reasoning_level': 'medium',
-            'supported_reasoning_levels': [{'effort': 'medium'}],
-        }]}))
-        with patch.dict('os.environ', CODEX_HOME=self.temp.name), \
-                patch.object(Path, 'stat', denied_stat), \
-                patch.object(Path, 'read_text', denied_read):
-            self.assertEqual(models.catalog(), [{
-                'model': 'fallback-model', 'default': 'medium', 'efforts': ['medium'],
-            }])
-            source.unlink()
-            self.assertEqual([item['model'] for item in models.catalog()],
-                             [value['model'] for value in models.FALLBACK_MODELS])
+    def test_telegram_model_commands_are_removed(self):
+        for command in ('/model other low', '/models', '/reasoning high'):
+            with self.db:
+                self.assertEqual(dispatch(self.db, 1, command, 10), 'Unknown command. Use /help.')
+        self.assertEqual(models.selected(self.db, 10), models.DEFAULT)
 
     def test_shared_choice_survives_reconnect_and_applies_to_other_chats(self):
-        with self.db:dispatch(self.db,1,'/model gpt-6-luna low',10,chat_id=-20)
+        with self.db:models.configure(self.db,10,-20,'model','gpt-6-luna low')
         other=connect(self.path)
         try:
             self.assertEqual(models.selected(other,-20),{'model':'gpt-6-luna','effort':'low'})
@@ -65,7 +47,7 @@ class ModelsTest(unittest.TestCase):
             models.initialize(self.db)
         self.assertEqual(models.selected(self.db, -20), preference)
         with self.db:
-            dispatch(self.db, 1, '/model gpt-6-luna low', 10, chat_id=-20)
+            models.configure(self.db,10,-20,'model','gpt-6-luna low')
             models.initialize(self.db)
         self.assertEqual(models.selected(self.db, 10), {'model':'gpt-6-luna','effort':'low'})
 
@@ -74,7 +56,7 @@ class ModelsTest(unittest.TestCase):
         with self.db:
             access.grant(self.db, 10, 11, 'viewer')
         with self.assertRaises(ValueError):
-            models.command(self.db, 11, -20, '/model', 'gpt-6-luna low')
+            models.configure(self.db, 11, -20, 'model', 'gpt-6-luna low')
         self.assertEqual(models.selected(self.db, 10), models.DEFAULT)
 
 if __name__=='__main__':unittest.main()

@@ -45,6 +45,9 @@ after restart. See `operations/runner.py` for deployment recovery.
   `/etc/codex/requirements.toml`; `developer/session.py` builds per-request settings.
 - Model/reasoning, roles, subscriptions and queue state are mutable database settings,
   managed through authenticated tools; they are not hidden source configuration.
+  Admins change model/reasoning conversationally through the settings tool. There
+  are no Telegram model commands or agent-maintained model/effort allowlists;
+  availability is determined by the Codex runtime.
 - Legacy `k8s/agent-worker` in aof-infra refers to an externally provisioned
   `aof-agent-workspace-policy` ConfigMap. It was absent during the November 2026
   audit. Do not treat that chart as a complete reconstruction of the active developer

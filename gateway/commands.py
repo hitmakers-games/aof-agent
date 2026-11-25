@@ -8,7 +8,7 @@ from telegram.storage import setting, put
 STANDS = {'dev': 'aof-dev', 'feature': 'aof-feature', 'release': 'aof-release'}
 COMPONENTS = {'backend': 'aof-back', 'frontend': 'frontend-gateway'}
 VIEWER = {'/start', '/help', '/whoami', '/status', '/tasks', '/work', '/ops'}
-ADMIN = {'/grant', '/revoke', '/users', '/autostart', '/pause', '/resume', '/coding', '/model', '/models', '/reasoning', '/ops'}
+ADMIN = {'/grant', '/revoke', '/users', '/autostart', '/pause', '/resume', '/coding', '/ops'}
 
 
 def minimum(text):
@@ -21,7 +21,7 @@ def help_text(db, actor):
     if access.allowed(db,actor,'operator'):
         text += '\n/watch on|off — task reports\n/result task; /cancel task; /retry task'
     if access.allowed(db,actor,'admin'):
-        text += '\n/model name [reasoning]; /reasoning level\n/grant id viewer|operator|admin; /revoke id; /users\n/pause; /resume — new background work\n/ops — self-deployment status'
+        text += '\n/grant id viewer|operator|admin; /revoke id; /users\n/pause; /resume — new background work\n/ops — self-deployment status'
     return text
 
 
@@ -53,9 +53,6 @@ def dispatch(db, update_id, text, actor=None, context=None, chat_id=None):
         return access.command(db, actor, head, argument)
     if head in {'/start','/help'}:
         return help_text(db, actor)
-    if head in {'/models','/model','/reasoning'}:
-        from gateway.models import command
-        return command(db, actor, chat_id or actor, head, argument)
     if head=='/ops':
         import json
         reference=argument or setting(db,'latest_operation','')

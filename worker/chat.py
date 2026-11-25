@@ -260,7 +260,6 @@ def main():
             db = connect("/transport/telegram.sqlite3")
             with db:
                 models.initialize(db)
-            models.publish_catalog()
             with db:
                 put(db,'jira_state','configured' if Path('/run/secrets/jira/credentials.json').exists() else 'not configured')
             from worker.check_sandbox import check
@@ -275,7 +274,6 @@ def main():
             print("Developer chat ready; supervised conversations, background work queue", flush=True)
             while True:
                 supervisor.tick(db)
-                models.publish_catalog()
                 time.sleep(5)
     except (TaskError, OSError, sqlite3.Error, StorageError, subprocess.SubprocessError):
         print("Chat worker stopped; check sign-in and sandbox configuration", file=sys.stderr)
